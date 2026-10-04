@@ -1,0 +1,33 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>AetherSequence</AssemblyName>
+    <RootNamespace>AetherSequence</RootNamespace>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
+    <!-- Растяжка мира на экран идёт напрямую через LockBits (FastScale):
+    GDI+ DrawImage на 640x360 -> 1920x1080 стоит ~13 мс, то есть почти
+    весь кадр. Ручной блит по строкам требует указателей. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NAudio" Version="2.2.1" />
+  </ItemGroup>
+
+  <!-- Растровые анимации заклинаний. Копируются рядом с exe, а при
+       single-file публикации уезжают внутрь через IncludeAllContentForSelfExtract. -->
+  <ItemGroup>
+    <None Include="Assets\Spells\*.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>Assets\Spells\%(Filename)%(Extension)</Link>
+    </None>
+  </ItemGroup>
+
+</Project>
