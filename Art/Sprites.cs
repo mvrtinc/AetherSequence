@@ -300,6 +300,62 @@ internal static class Sprites
         ['E'] = GameMath.Rgb(102, 255, 224),
     });
 
+    /// <summary>
+    /// Кристалл освещения. Тёмно-синий каменный постамент со светящимися
+ /// жилами и высокий циановый кристалл с белой сердцевиной.
+    /// </summary>
+    public static readonly Sprite SpriteCrystal = Sprite.Parse(new[]
+    {
+   "..............K..............",
+        ".............KSK.............",
+        "............KSCSK............",
+        "...........KSCCCSK...........",
+        "..........KSCCCCCSK..........",
+   ".........KSCccccCCS K.........",
+        ".........KSCcfffcCSK.........",
+     "........KSCCffWWffCCSK........",
+        "........KSCCffWWffCCSK........",
+      "........KSCcfffcCSK..........",
+        ".........KSCccccCSK..........",
+     ".........KSCCccCCSK...........",
+      "........KSCCCCCCSK...........",
+        ".......KSCCCCCCCCSK..........",
+        "......KSCCCffCCCCCSK.........",
+        ".....KSCCCffWWffCCCcK........",
+        "....KSCCCCffWWffCCCCSK.......",
+        "...KSCCCCCffWWffCCCCCSK......",
+        "..KSCCCCCCffWWffCCCCCCSK.....",
+        "..KSCCCCCCffffCCCCCCCCSK.....",
+        ".KSCCCCCCCCCCCccccCCCCCSK....",
+        ".KSCCCCCCCCCCSSSSCCCCCCSK....",
+        ".KsSSSSSSSSSSSSSSSSSSSsCK....",
+        ".KsPPPPPPPPPPPPPPPPPPPPsCK....",
+   ".KsPPaPPaPPaPPaPPaPPaPPsCK....",
+        ".KsPPaPPaPPaPPaPPaPPaPPsCK....",
+        ".KsPPPPPPPPPPPPPPPPPPPPsCK....",
+        ".KssPPPPPPPPPPPPPPPPPPssK.....",
+        ".KsssPPPPPPPPPPPPPPPPsssK.....",
+ "..KssssPPPPPPPPPPPPPPssssK.....",
+        "..KsssssPPPPPPPPPPPPssssK......",
+        "...KsssssPPPPPPPPPPssssK......",
+      "....KsssssPPPPPPPPPssssK......",
+      ".....KsssssPPPPPPPssssK.......",
+        "......KsssssPPPPPPssssK.......",
+      ".......KKssssssssssssKK.......",
+    }, new Dictionary<char, Color>
+    {
+        ['K'] = GameMath.Rgb(6, 7, 18),
+     ['S'] = GameMath.Rgb(28, 34, 66),
+        ['s'] = GameMath.Rgb(22, 26, 52),
+  ['C'] = GameMath.Rgb(48, 96, 178),
+   ['c'] = GameMath.Rgb(96, 176, 244),
+        ['f'] = GameMath.Rgb(150, 220, 255),
+        ['W'] = GameMath.Rgb(226, 246, 255),
+        ['P'] = GameMath.Rgb(30, 34, 62),
+        ['a'] = GameMath.Rgb(58, 108, 190),
+        ['d'] = GameMath.Rgb(20, 24, 48),
+    });
+
     /// <summary>Страж Эфира: заострённые наплечники, парящие обломки, кристалл-глаз.</summary>
     public static readonly BossPart[] BossParts =
     {

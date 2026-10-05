@@ -71,6 +71,31 @@ internal sealed class Enemy
     public float MaxHp = 20f;
     public float Speed = 40f;
     public float ContactDamage = 8f;
+
+    /// <summary>Освещённость врага в этом кадре: 0 - тьма, 1 - полный свет.</summary>
+    public float LightLevel;
+
+    /// <summary>
+    /// Обновляет LightLevel из маски света. В дуэли и на аренах темноты нет,
+    /// поэтому там всегда 1 и поведение остаётся прежним.
+    /// </summary>
+    private void LightAt(Game game) => LightLevel = game.Renderer?.LightAt(Pos) ?? 1f;
+
+    /// <summary>
+    /// Пробуждение. Разбужденный враг держится активным, пока не истечёт
+    /// таймер, даже если свет погас: увидев игрока, он его не забудет.
+    /// </summary>
+    private void UpdateAwaken(float dt)
+    {
+        if (AwakenTimer > 0f) AwakenTimer = MathF.Max(0f, AwakenTimer - dt);
+
+        // Свет сам по себе будит: если посох направлен прямо на врага.
+        if (!Awakened && LightLevel > 0.45f)
+        {
+            Awakened = true;
+            AwakenTimer = 10f;
+        }
+    }
     public float XpValue = 6f;
     public Color Tint = Color.White;
     public float Flash;
@@ -96,6 +121,21 @@ internal sealed class Enemy
     public int PatternIndex;
     public float ChargeDir;
     public float Age;
+
+    /// <summary>
+    /// Разбужен ли враг. В темноте враги спят, пока игрок не зажжёт кристалл:
+ /// свет в комнате будит тех, кто в ней есть, и притягивает тех, кто рядом.
+ /// </summary>
+    public bool Awakened;
+
+    /// <summary>Сколько секунд враг остаётся разбуждённым.</summary>
+    public float AwakenTimer;
+
+    /// <summary>Боится света: в освещённом месте не бьёт и отступает.</summary>
+    public bool FearsLight;
+
+    /// <summary>Тянется к свету: сам идёт в освещённые комнаты.</summary>
+    public bool DrawnToLight;
 
     private static int _nextId;
 
@@ -130,10 +170,12 @@ internal sealed class Enemy
                 e.MaxHp = e.Hp = 22f + d * 3.2f;
                 e.Speed = 46f;
                 e.ContactDamage = 7f + d * 0.5f;
-                e.XpValue = 6f + d * 0.4f;
-                e.Tint = GameMath.Rgb(120, 230, 170);
-                e.StateTimer = rng.Range(0.2f, 0.7f);
-                break;
+e.XpValue = 6f + d * 0.4f;
+        e.Tint = GameMath.Rgb(120, 230, 170);
+     e.AttackCd = rng.Range(0.6f, 1.6f);
+              // Слизни лезут к свету: как только кристалл зажжён, они идут туда.
+              e.DrawnToLight = true;
+      break;
             case EnemyKind.MiniSlime:
                 e.Radius = 4f;
                 e.MaxHp = e.Hp = 9f + d * 1.1f;
@@ -168,10 +210,13 @@ internal sealed class Enemy
                 e.MaxHp = e.Hp = 32f + d * 4.4f;
                 e.Speed = 74f;
                 e.ContactDamage = 15f + d * 0.9f;
-                e.XpValue = 11f + d * 0.7f;
-                e.Tint = GameMath.Rgb(200, 170, 255);
-                e.AttackCd = rng.Range(1.2f, 2.6f);
-                break;
+e.XpValue = 11f + d * 0.7f;
+        e.Tint = GameMath.Rgb(200, 170, 255);
+        e.AttackCd = rng.Range(1.2f, 2.6f);
+        // Тени боятся света: в освещённом не бьют и отходят в темноту.
+  // Отсюда же они срывают зарядку - подойти вплотную в темноте проще.
+     e.FearsLight = true;
+        break;
             case EnemyKind.Boss:
             {
                 BossDef.Data def = BossDef.ForDepth(depth);
@@ -219,27 +264,59 @@ internal sealed class Enemy
             return;
         }
 
-        Vector2 toPlayer = game.Player.Pos - Pos;
+Vector2 toPlayer = game.Player.Pos - Pos;
         float dist = toPlayer.Length();
 
-        switch (Kind)
+        // Насколько вр��га сейчас освещён. Раньше такой проверки не было
+     // вовсе, поэтому все враги вели себя одинаково в свете и в темноте.
+        LightAt(game);
+        UpdateAwaken(dt);
+
+        // В темноте и не разбуженный враг не двигается - он спит, пока
+        // свет не дойдёт до него. Это и есть базовое правило новой механики.
+        bool dormant = !Awakened && LightLevel < 0.3f;
+        if (dormant && !IsBoss)
+        {
+      Vel *= MathF.Max(0f, 1f - 6f * dt);
+            Integrate(game, dt);
+            return;
+        }
+
+        // Страх света: в освещённом месте враг не идёт на игрока, а
+// отступает в темноту. Урон он при этом всё ещё может нанести вплотную.
+        if (FearsLight && !IsBoss)
+   {
+   if (LightLevel > 0.5f && dist < 70f)
+      {
+        Vector2 away = GameMath.Normalized(Pos - game.Player.Pos);
+        Vel += away * 190f * dt;
+    Vel = GameMath.ClampLength(Vel, Speed * 0.9f);
+                State = 0;
+                StateTimer = 0.2f;
+        AttackCd = MathF.Max(AttackCd, 0.4f);
+    Integrate(game, dt);
+                return;
+      }
+        }
+
+  switch (Kind)
         {
             case EnemyKind.Slime:
-            case EnemyKind.MiniSlime:
-                UpdateSlime(game, dt, dist);
-                break;
-            case EnemyKind.Knight:
+ case EnemyKind.MiniSlime:
+     UpdateSlime(game, dt, dist);
+         break;
+    case EnemyKind.Knight:
                 UpdateKnight(game, dt, dist, toPlayer);
-                break;
+         break;
             case EnemyKind.Shade:
-                UpdateShade(game, dt, dist, toPlayer);
-                break;
+          UpdateShade(game, dt, dist, toPlayer);
+             break;
             case EnemyKind.Sentinel:
-                UpdateSentinel(game, dt, dist, toPlayer);
-                break;
+UpdateSentinel(game, dt, dist, toPlayer);
+         break;
             case EnemyKind.Boss:
-                UpdateBoss(game, dt, dist, toPlayer);
-                break;
+      UpdateBoss(game, dt, dist, toPlayer);
+          break;
         }
 
         Integrate(game, dt);

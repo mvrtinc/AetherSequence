@@ -1,4 +1,4 @@
-using System.Drawing.Drawing2D;
+﻿using System.Drawing.Drawing2D;
 using System.Numerics;
 using AetherSequence.Core;
 using AetherSequence.Entities;
@@ -51,15 +51,29 @@ g.CompositingMode = CompositingMode.SourceOver;
 
         // Полупрозрачная подложка без толстой рамки: миникарта должна
         // читаться как часть интерфейса, а не как отдельное окно поверх игры.
-   Palette.Fill(g, Palette.Fade(System.Drawing.Color.Black, 0.42f), X - 1f, Y - 1f, W + 2f, H + 2f);
+Palette.Fill(g, Palette.Fade(System.Drawing.Color.Black, 0.42f), X - 1f, Y - 1f, W + 2f, H + 2f);
         if (_layout is not null)
         {
-            g.DrawImage(
-       _layout,
-         new RectangleF(X, Y, level.W * _scale, level.H * _scale),
- new RectangleF(0f, 0f, (float)_layout.Width, (float)_layout.Height),
-    GraphicsUnit.Pixel);
+   g.DrawImage(
+   _layout,
+            new RectangleF(X, Y, level.W * _scale, level.H * _scale),
+   new RectangleF(0f, 0f, (float)_layout.Width, (float)_layout.Height),
+GraphicsUnit.Pixel);
         }
+
+        // Туман войны: неисследованные тайлы гасятся. Раньше миникарта
+        // рисовала весь уровень с первого кадра, и игрок видел планировку
+        // целиком до того, как туда дошёл.
+        // Туман войны есть только там, где есть темнота. В дуэли и на аренах
+  // боссов карта открыта целиком, иначе она просто почернеет.
+        bool fogEnabled = !game.DuelMode && !game.Level.IsBoss && game.Settings.GraphicsQuality > 0;
+        if (fogEnabled)
+      {
+    int currentRoom = level.RoomAt(game.Player.Pos);
+            DrawFogOfWar(g, level, currentRoom);
+        }
+
+        float cell = MathF.Max(1f, _scale);
 
         // рамка текущего поля зрения, вписана в границы карты
         float mapW = level.W * _scale;
@@ -104,19 +118,31 @@ if (boxR - boxL > 1f && boxB - boxT > 1f)
 // Враги. Раньше точки рисовались для всех, поэтому враг за стеной
         // светился на миникарте и выглядел так, будто стоит в стене.
         // Теперь видны только те, до кого есть линия видимости.
-        Vector2 eye = game.Player.Pos;
+Vector2 eye = game.Player.Pos;
+        // Страховка от тупика: когда осталось двое-трое, миникарта показывает
+        // всех выживших, иначе последнего врага в темноте искать вслепую.
+        bool hunt = game.EnemiesLeft <= 3 && !game.Level.IsBoss;
+
         foreach (Enemy e in game.Enemies)
         {
             if (e.Dead) continue;
 
-            bool boss = e.IsBoss;
-            // Босса видно всегда: потерять его из виду в толпе - плохо.
-            if (!boss && !level.LineClear(eye, e.Pos)) continue;
+   bool boss = e.IsBoss;
+      // Босса видно всегда: потерять его из виду - плохо.
+  if (!boss && !hunt && !level.LineClear(eye, e.Pos)) continue;
 
       float r = boss ? 2.5f : 1.5f;
   Color c = boss ? Palette.Fade(Palette.Gold, 0.95f) : Palette.Fade(Palette.Danger, 0.9f);
       float ex = X + _offsetX + (e.Pos.X / level.PixelSize.X) * (level.W * _scale);
-float ey = Y + _offsetY + (e.Pos.Y / level.PixelSize.Y) * (level.H * _scale);
+      float ey = Y + _offsetY + (e.Pos.Y / level.PixelSize.Y) * (level.H * _scale);
+
+      if (hunt && !boss && !level.LineClear(eye, e.Pos))
+        {
+    // Не видно, но где-то есть: тусклый контур, чтобы шёл к цели.
+         Palette.Stroke(g, Palette.Fade(Palette.Danger, 0.45f), ex - r - 0.5f, ey - r - 0.5f, r * 2f + 1f, r * 2f + 1f);
+            continue;
+        }
+
      Palette.Fill(g, c, ex - r, ey - r, r * 2f, r * 2f);
         }
 
@@ -157,6 +183,46 @@ Palette.Fill(g, Palette.Fade(System.Drawing.Color.Black, 0.75f), px - 2.5f, py -
         Color edge = level.Colors.Neon;
         Palette.Stroke(g, Palette.Fade(edge, 0.35f), X - 1f, Y - 1f, W + 2f, H + 2f);
         Palette.Fill(g, Palette.Fade(edge, 0.5f), X - 1f, Y - 1f, W + 2f, 1f);
+    }
+
+    /// <summary>
+    /// Гасит неисследованные куски карты. Разблокированная кристаллом
+    /// комната видна целиком, изученная - приглушённо, текущая - как есть.
+ /// </summary>
+    private void DrawFogOfWar(Graphics g, Level level, int currentRoom)
+    {
+        if (level.Explored.Length == 0) return;
+
+        float cell = MathF.Max(1f, _scale);
+
+        for (int ty = 0; ty < level.H; ty++)
+      {
+            for (int tx = 0; tx < level.W; tx++)
+      {
+       int idx = ty * level.W + tx;
+     bool explored = level.Explored[idx] != 0;
+             bool revealed = currentRoom >= 0
+                    && level.IsRoomRevealed(currentRoom)
+   && level.RoomAt(tx, ty) == currentRoom;
+
+                if (revealed || explored) continue;
+
+       float x = X + _offsetX + tx * _scale;
+          float y = Y + _offsetY + ty * _scale;
+
+       // Планировка остаётся видимой силуэтом: игрок помнит, где был.
+     // Полностью стирать нельзя - тогда миникарта бесполезна.
+  Color fog = Palette.Fade(System.Drawing.Color.Black, 0.78f);
+     if (level.Tiles[idx] == Tile.Wall)
+    {
+    Palette.Fill(g, Palette.Fade(fog, 0.9f), x, y, cell, cell);
+     }
+else
+      {
+           Palette.Fill(g, fog, x, y, cell, cell);
+        }
+            }
+      }
     }
 
     private void BuildLayout(Level level)

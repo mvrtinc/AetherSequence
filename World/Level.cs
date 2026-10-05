@@ -15,6 +15,38 @@ internal enum Tile : byte
     Rubble,
 }
 
+/// <summary>
+/// Прямоугольник комнаты в тайлах. Раньше список комнат жил локальной
+/// переменной в GenerateRooms и умирал вместе с методом, поэтому по готовому
+/// уровню было нельзя понять, где комната, а где коридор. Кристаллы и туман
+/// войны ставятся по комнатам, поэтому координаты теперь сохраняются.
+/// </summary>
+internal readonly struct RoomRect
+{
+    public readonly int X;
+    public readonly int Y;
+    public readonly int W;
+    public readonly int H;
+
+    public RoomRect(int x, int y, int w, int h)
+    {
+        X = x;
+        Y = y;
+        W = w;
+        H = h;
+    }
+
+    public int Right => X + W - 1;
+
+    public int Bottom => Y + H - 1;
+
+    /// <summary>Центр комнаты в пикселях мира.</summary>
+    public Vector2 CenterPx => new((X + W * 0.5f) * Level.TileSize, (Y + H * 0.5f) * Level.TileSize);
+
+    /// <summary>Комната содержит тайл? Тайлы по краям считаются частью комнаты.</summary>
+    public bool Contains(int tx, int ty) => tx >= X && tx <= Right && ty >= Y && ty <= Bottom;
+}
+
 internal sealed class Level
 {
     public const int TileSize = 16;
@@ -56,7 +88,91 @@ internal sealed class Level
 
     public Vector2 PixelSize => new(W * TileSize, H * TileSize);
 
-    private Bitmap? _staticMap;
+    /// <summary>
+    /// Комнаты уровня в тайлах. Заполняется при генерации: у обычных уровней
+    /// - по одной на комнату, у арен боссов - одна на весь зал, в дуэли - одна
+    /// на всю пещеру. Пустой список означает, что уровень строился мимо
+    /// генератора (тесты, отладка) - тогда кристаллов на нём не будет.
+    /// </summary>
+    public List<RoomRect> Rooms { get; } = new();
+
+    /// <summary>Комната, в которой лежит точка. Ищется по тайлу.</summary>
+    public int RoomAt(int tx, int ty)
+    {
+        for (int i = 0; i < Rooms.Count; i++)
+        {
+            if (Rooms[i].Contains(tx, ty)) return i;
+        }
+
+        return -1;
+    }
+
+    /// <summary>Комната по мировой точке.</summary>
+    public int RoomAt(Vector2 pos) => RoomAt((int)MathF.Floor(pos.X / TileSize), (int)MathF.Floor(pos.Y / TileSize));
+
+    /// <summary>
+    /// Тайлы, в которые уже попадал свет игрока. Раньше такой карты не было:
+    /// миникарта рисовала всю планировку с первого кадра, и игрок видел
+    /// весь уровень ещё до того, что туда дошёл.
+    /// </summary>
+    public byte[] Explored { get; private set; } = Array.Empty<byte>();
+
+    /// <summary>Комнаты, открытые кристаллом: они видны на миникарте целиком.</summary>
+    public readonly HashSet<int> RevealedRooms = new();
+
+    /// <summary>Размечает исследованные тайлы вокруг точки и её комнату.</summary>
+    public void MarkExplored(Vector2 pos, float radius)
+    {
+     if (Explored.Length == 0) Explored = new byte[W * H];
+
+int tx0 = GameMath.ClampI((int)MathF.Floor((pos.X - radius) / TileSize), 0, W - 1);
+        int ty0 = GameMath.ClampI((int)MathF.Floor((pos.Y - radius) / TileSize), 0, H - 1);
+        int tx1 = GameMath.ClampI((int)MathF.Floor((pos.X + radius) / TileSize), 0, W - 1);
+        int ty1 = GameMath.ClampI((int)MathF.Floor((pos.Y + radius) / TileSize), 0, H - 1);
+
+   float radiusSq = radius * radius;
+        for (int ty = ty0; ty <= ty1; ty++)
+    {
+            float dy = (ty + 0.5f) * TileSize - pos.Y;
+    for (int tx = tx0; tx <= tx1; tx++)
+     {
+    float dx = (tx + 0.5f) * TileSize - pos.X;
+      if (dx * dx + dy * dy > radiusSq) continue;
+       Explored[ty * W + tx] = 1;
+   }
+    }
+    }
+
+    /// <summary>Тайл был освещён хотя бы раз.</summary>
+    public bool IsExplored(int tx, int ty)
+    {
+        if (tx < 0 || ty < 0 || tx >= W || ty >= H) return false;
+        return Explored.Length != 0 && Explored[ty * W + tx] != 0;
+    }
+
+    /// <summary>Комната открыта кристаллом - её видно целиком.</summary>
+    public bool IsRoomRevealed(int roomIndex) => RevealedRooms.Contains(roomIndex);
+
+    /// <summary>Открывает комнату целиком: все её тайлы становятся исследованными.</summary>
+    public void RevealRoom(int roomIndex)
+    {
+  if (roomIndex < 0 || roomIndex >= Rooms.Count) return;
+        RevealedRooms.Add(roomIndex);
+        if (Explored.Length == 0) Explored = new byte[W * H];
+
+   RoomRect r = Rooms[roomIndex];
+        for (int ty = r.Y; ty <= r.Bottom; ty++)
+      {
+            if (ty < 0 || ty >= H) continue;
+            for (int tx = r.X; tx <= r.Right; tx++)
+       {
+      if (tx < 0 || tx >= W) continue;
+    Explored[ty * W + tx] = 1;
+      }
+        }
+    }
+
+  private Bitmap? _staticMap;
 
     /// <summary>
     /// Пол и стены не меняются в течение забега, поэтому весь уровень
@@ -100,14 +216,15 @@ internal sealed class Level
     /// <summary>Цвет колонны на миникарте.</summary>
     public Color MinimapPillarColor => Colors.MinimapPillar;
 
-    private static Level Create(int w, int h)
-    {
+private static Level Create(int w, int h)
+   {
         Level level = new()
-        {
+      {
             W = w,
             H = h,
-            Tiles = new Tile[w * h],
-            Decor = new byte[w * h],
+    Tiles = new Tile[w * h],
+      Decor = new byte[w * h],
+            Explored = new byte[w * h],
         };
         for (int i = 0; i < level.Tiles.Length; i++) level.Tiles[i] = Tile.Wall;
         return level;
@@ -251,6 +368,10 @@ internal sealed class Level
         level.Spawn = new(6f * TileSize, cy * TileSize);
         level.Spawn2 = new((w - 7) * TileSize, cy * TileSize);
         level.ExitPos = level.Spawn;
+        // Дуэльная пещера - тоже одна большая комната. В дуэли темноты нет
+        // и кристаллов не будет, но список комнат держим полным.
+        level.Rooms.Clear();
+        level.Rooms.Add(new RoomRect(1, 1, w - 2, h - 2));
         level.ExitOpen = false;
         level.IsBoss = false;
         level.Depth = depth;
@@ -290,6 +411,10 @@ internal sealed class Level
         const int rows = 2;
         List<(int X, int Y, int W, int H)> rooms = new();
 
+        // Комнаты запоминаем сразу: кристаллы и туман войны ставятся по комнатам,
+        // а не по разбору получившейся сетки тайлов (коридоры сливают их в один).
+        level.Rooms.Clear();
+
         for (int cy = 0; cy < rows; cy++)
         {
             for (int cx = 0; cx < cols; cx++)
@@ -303,7 +428,8 @@ internal sealed class Level
                 int rx = GameMath.ClampI(cellX0 + rng.Next(0, Math.Max(1, cellX1 - cellX0 - rw + 1)), cellX0, Math.Max(cellX0, cellX1 - rw + 1));
                 int ry = GameMath.ClampI(cellY0 + rng.Next(0, Math.Max(1, cellY1 - cellY0 - rh + 1)), cellY0, Math.Max(cellY0, cellY1 - rh + 1));
                 rooms.Add((rx, ry, rw, rh));
-                Carve(level, rx, ry, rx + rw - 1, ry + rh - 1, Tile.Floor);
+   level.Rooms.Add(new RoomRect(rx, ry, rw, rh));
+       Carve(level, rx, ry, rx + rw - 1, ry + rh - 1, Tile.Floor);
             }
         }
 
@@ -417,8 +543,12 @@ internal sealed class Level
         }
 
         level.Spawn = new(cx * TileSize, (h - 4) * TileSize);
-        level.ExitPos = new(cx * TileSize, 3.5f * TileSize);
-        ClearArea(level, level.Spawn);
+   level.ExitPos = new(cx * TileSize, 3.5f * TileSize);
+        // Арена - один большой зал без перегородок, поэтому и комната одна.
+     // Кристаллов тут не будет: зал и так освещён целиком.
+     level.Rooms.Clear();
+        level.Rooms.Add(new RoomRect(1, 1, w - 2, h - 2));
+   ClearArea(level, level.Spawn);
         ClearArea(level, level.ExitPos);
         ScatterDecor(level, rng);
         return level;

@@ -98,11 +98,16 @@ renderer.DustDensity = 0f;
 
         Measure("часть C: только HUD", () => renderer.DrawHudOnly(sg, game, 3f, true, PointF.Empty), 120);
 
-    Measure("часть D: обновление игры", () =>
+Measure("часть D: обновление игры", () =>
         {
-    game.UpdateDuel(1f / 60f);
-         duel.Tick(1f / 60f);
-        }, 120);
+     game.UpdateDuel(1f / 60f);
+        duel.Tick(1f / 60f);
+  }, 120);
+
+        // Отдельный замер одиночной игры с темнотой. Пробник выше меряет
+        // дуэль, а в дуэли темноты нет по решению - без этого замера
+        // цена маски света осталась бы незамеченной.
+        DarkFrameMeasure(renderer, world, sg);
 
         BlitCompare(world, screen);
 
@@ -136,12 +141,71 @@ renderer.DustDensity = 0f;
         }
     }
 
+/// <summary>
+    /// Замер кадра одиночной игры: тут включается темнота и маска света.
+    /// Именно этот сценарий решает, уложится ли игра в бюджет кадра -
+ /// пробник выше меряет дуэль, а в дуэли темноты нет.
+    /// </summary>
+    private static void DarkFrameMeasure(GameRenderer renderer, Bitmap world, Graphics sg)
+    {
+Console.WriteLine("[frame] --- одиночная игра с темнотой ---");
+
+        Game solo = DevTools.NewGame();
+  solo.Settings.ShowFps = true;
+        solo.Settings.GraphicsQuality = 2;
+        solo.StartRun(20260806u);
+        solo.State = GameState.Playing;
+
+        // Наполняем сцену: снаряды, частицы, враги в движении.
+        for (int i = 0; i < 240; i++)
+    {
+            if (i % 9 == 0 && SpellDB.All.Count > 0)
+            {
+     SpellDef def = SpellDB.All[i / 9 % SpellDB.All.Count];
+    CombatUtil.Cast(solo, solo.Player, def, false);
+}
+            solo.Update(1f / 60f);
+        }
+
+        Console.WriteLine($"[frame] сцена: врагов={solo.Enemies.Count} пуль={solo.Projectiles.Count} " +
+  $"частиц={solo.Effects.Particles.Count} кристаллов={solo.Crystals.Count}");
+
+        Measure("темнота: весь кадр", () => FrameSolo(renderer, solo, world, sg), 150);
+
+        Console.WriteLine($"[frame] маска света: накопление={LightMaskTimings.LastAccumulateMs:0.00}ms " +
+            $"заливка bitmap={LightMaskTimings.LastPaintMs:0.00}ms " +
+ $"наложение={LightMaskTimings.LastApplyMs:0.00}ms");
+
+        // Тот же кадр, но темнота выключена - честное сравнение.
+        solo.Settings.GraphicsQuality = 0;
+Measure("без темноты: весь кадр", () => FrameSolo(renderer, solo, world, sg), 150);
+solo.Settings.GraphicsQuality = 2;
+    }
+
+    private static void FrameSolo(GameRenderer renderer, Game solo, Bitmap world, Graphics sg)
+    {
+   using Graphics wg = Graphics.FromImage(world);
+        wg.CompositingMode = CompositingMode.SourceCopy;
+        wg.Clear(Color.Black);
+        wg.CompositingMode = CompositingMode.SourceOver;
+        renderer.DrawWorldOnly(wg, solo);
+
+        sg.CompositingMode = CompositingMode.SourceCopy;
+        sg.InterpolationMode = InterpolationMode.NearestNeighbor;
+        sg.CompositingQuality = CompositingQuality.HighSpeed;
+sg.DrawImage(world, new RectangleF(0f, 0f, 1920f, 1080f),
+      new RectangleF(0f, 0f, (float)world.Width, (float)world.Height), GraphicsUnit.Pixel);
+     sg.CompositingMode = CompositingMode.SourceOver;
+        renderer.DrawHudOnly(sg, solo, 3f, true, PointF.Empty);
+
+ solo.Update(1f / 60f);
+    }
+
     /// <summary>
     /// Растяжка 640x360 -> 1920x1080. GDI+ DrawImage тратит на это ~13 мс,
-    /// то есть почти весь кадр. Ручная растяжка по строкам через LockBits
-    /// копирует каждый исходный пиксель в runs и не вызывает GDI+ вовсе.
+    /// то есть почти весь кадр, и это потолок именно этой машины.
     /// </summary>
-private static void BlitCompare(Bitmap src, Bitmap dst)
+    private static void BlitCompare(Bitmap src, Bitmap dst)
     {
 Measure("растяжка GDI+ DrawImage", () =>
    {

@@ -23,11 +23,15 @@ internal static class Lighting
     /// <summary>Кольц в одном пятне: больше - мягче, но дороже.</summary>
     private const int Rings = 4;
 
-    /// <summary>
+/// <summary>
     /// Пятна света на полу. Вызывается после статичной карты и до сущностей,
-    /// чтобы свет лежал под игроком, а не поверх него.
+ /// чтобы свет лежал под игроком, а не поверх него.
+    ///
+ /// Маска передаётся, чтобы враг в темноте не выдавал себя ореолом:
+ /// раньше пятно рисовалось всегда, и в тёмной комнате враг был виден
+ /// как яркое пятно, хотя сам рисоваться не должен.
     /// </summary>
-    public static void DrawPools(Graphics g, Game game, Vector2 cam)
+    public static void DrawPools(Graphics g, Game game, Vector2 cam, LightMask? mask = null)
     {
         float w = GameRenderer.Width;
         float h = GameRenderer.Height;
@@ -41,12 +45,16 @@ internal static class Lighting
 
         // Враги - главные постоянные источники: зелёный обычный,
         // красный агрессивный, золотой босс.
-        for (int i = 0; i < game.Enemies.Count && i < MaxLights; i++)
-        {
+for (int i = 0; i < game.Enemies.Count && i < MaxLights; i++)
+     {
             Enemy e = game.Enemies[i];
-            if (e.Dead) continue;
-            Vector2 p = e.Pos - cam;
-            if (p.X < -60f || p.Y < -60f || p.X > w + 60f || p.Y > h + 60f) continue;
+     if (e.Dead) continue;
+
+  // В темноте врага не видно - значит, нет и его пятна света.
+    if (mask is not null && !mask.IsLit(e.Pos, cam)) continue;
+
+      Vector2 p = e.Pos - cam;
+        if (p.X < -60f || p.Y < -60f || p.X > w + 60f || p.Y > h + 60f) continue;
 
 Color c = e.IsBoss ? Palette.Gold : e.Tint.A > 0 ? e.Tint : Palette.Xp;
  float k = e.IsBoss ? 0.42f : 0.20f;

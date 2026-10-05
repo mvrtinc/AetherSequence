@@ -162,18 +162,21 @@ g.CompositingMode = CompositingMode.SourceOver;
         float ox = MathF.Round(cam.X);
         float oy = MathF.Round(cam.Y);
 
-        GraphicsState state = g.Save();
+GraphicsState state = g.Save();
         g.TranslateTransform(-ox, -oy);
 
-game.Level.DrawStaticMap(g, cam, view);
+        // Маска считается до отрисовки: по ней решается, кого видно.
+  BeginDarkness(game, cam);
 
-// Качество графики из настроек: свет, пыль и мягкие тени - первые по цене.
-int quality = game.Settings.GraphicsQuality;
+   game.Level.DrawStaticMap(g, cam, view);
+
+        // Качество графики из настроек: свет, пыль и мягкие тени.
+   int quality = game.Settings.GraphicsQuality;
         if (quality > 0)
-        {
-            Lighting.DrawPools(g, game, cam);
+{
+    Lighting.DrawPools(g, game, cam, _mask);
             Lighting.DrawPlayerPool(g, game, cam);
-        }
+     }
 
      if (quality >= 2 && game.Settings.Dust)
         {
@@ -181,18 +184,49 @@ int quality = game.Settings.GraphicsQuality;
         }
 
         game.Level.DrawExit(g, game.Time, game.Level.ExitOpen);
-        game.Effects.Draw(g, game.Time);
+      game.Effects.Draw(g, game.Time);
 
-foreach (Pickup p in game.Pickups) p.Draw(g, game.Time);
-        foreach (Enemy e in game.Enemies) e.Draw(g, game.Time);
+        // Кристаллы стоят на полу и тоже прячутся в темноте: неактивный
+        // кристалл должен быть виден только там, куда падает свет посоха.
+        for (int i = 0; i < game.Crystals.Count; i++)
+        {
+  Crystal c = game.Crystals[i];
+            bool canCharge = game.ChargeActive || c.Activated;
+            if (!IsLitFor(c.Pos, cam) && !canCharge) continue;
+            c.Draw(g, game.Time, !c.Activated && Vector2.Distance(game.Player.Pos, c.Pos) < Crystal.Reach);
+        }
+
+foreach (Pickup p in game.Pickups)
+     {
+       // В темноте бонусы не видны: иначе они светятся сквозь стены.
+      if (!IsLitFor(p.Pos, cam)) continue;
+      p.Draw(g, game.Time);
+     }
+
+foreach (Enemy e in game.Enemies)
+        {
+     // Главное правило темноты: за пределами света врага не видно
+       // вообще. Раньше он просто рисовался, и в тёмной комнате был
+        // виден так же хорошо, как в освещённой.
+      //
+       // Исключение - замах: атакующий должен быть виден всегда, иначе
+  // удар из темноты выглядит как баг, а не как опасность.
+     bool telegraphing = e.State == 1 && !e.IsBoss;
+  bool visible = telegraphing || e.Dead || IsLitFor(e.Pos, cam);
+     if (!visible) continue;
+       e.Draw(g, game.Time);
+        }
         if (game.Player.Alive) game.Player.Draw(g, game.Time);
 
         // В дуэли соперник - такой же игрок, его надо видеть в пещере.
         if (game.DuelMode && game.Foe is { } foe && foe.Alive) foe.Draw(g, game.Time);
 
-        foreach (Projectile pr in game.Projectiles) pr.Draw(g, game.Time);
+foreach (Projectile pr in game.Projectiles) pr.Draw(g, game.Time);
 
 g.Restore(state);
+
+      // Темнота ложится на мир и сущности, но не на прицел и цифры урона.
+        EndDarkness(g);
 
         game.Effects.DrawTexts(g, cam);
         DrawTargetLock(g, game);
@@ -203,6 +237,169 @@ g.Restore(state);
         // из-за чего кадр оставался плоским и пересвеченным.
    DrawScreenEffects(g, game);
     }
+
+    /// <summary>
+    /// Темнота и свет. Маска пересчитывается раз в кадр и накрывает мир,
+ /// а прицел и всплывающие цифры рисуются поверх неё - иначе ими
+    /// невозможно целиться в темноте.
+    ///
+    /// В дуэли и на аренах боссов темноты нет: там своя механика и
+    /// читаемость важнее.
+ /// </summary>
+/// <summary>
+    /// Начинает темноту: собирает источники и считает маску.
+    /// Это происходит ДО отрисовки сущностей, чтобы по маске можно было
+ /// решить, кого вообще видно. Сама темнота накладывается в конце.
+    /// </summary>
+    private void BeginDarkness(Game game, Vector2 cam)
+    {
+        _gameRef = game;
+   MaskCam = cam;
+
+        if (!DarknessEnabled(game))
+        {
+            _dark = false;
+       if (_mask is not null) _mask.Begin();
+   return;
+    }
+
+        _dark = true;
+        if (_mask is null) _mask = new LightMask((int)Width, (int)Height);
+
+        _mask.Bind(game.Level, game.Level.Colors.Vignette);
+        _mask.Darkness = 0.9f;
+        _mask.Begin();
+
+CollectLights(game, _mask, cam);
+        _mask.Build(cam);
+
+      // Туман войны: отмечаем то, куда падает свет. Планировка исследованного
+        // остаётся на миникарте навсегда, а содержимое - нет.
+        if (game.Player.Alive)
+     {
+   game.Level.MarkExplored(game.Player.Pos, 58f);
+            MarkConeExplored(game);
+   }
+    }
+
+    /// <summary>
+    /// Отмечает тайлы вдоль конуса посоха: игрок видит, куда светит,
+    /// поэтому исследованной считается и освещённая часть комнаты.
+    /// </summary>
+    private static void MarkConeExplored(Game game)
+    {
+   Vector2 origin = game.Player.Pos;
+        Vector2 dir = GameMath.FromAngle(game.Player.AimAngle);
+        const float Len = 110f;
+ const int Steps = 22;
+
+   for (int i = 3; i <= Steps; i++)
+        {
+      float t = i / (float)Steps;
+      Vector2 p = origin + dir * (Len * t);
+   game.Level.MarkExplored(p, 22f);
+        }
+    }
+
+    /// <summary>Накладывает темноту на уже нарисованный мир.</summary>
+    private void EndDarkness(Graphics g)
+    {
+        if (!_dark || _mask is null) return;
+        _mask.Apply(g, (int)Width, (int)Height);
+    }
+
+    private bool _dark;
+
+    /// <summary>Темнота применяется только в одиночной игре на обычных уровнях.</summary>
+    private static bool DarknessEnabled(Game game)
+    {
+        if (game.State != GameState.Playing) return false;
+        if (game.DuelMode) return false;
+        if (game.Level.IsBoss) return false;
+    return game.Settings.GraphicsQuality > 0;
+    }
+
+    /// <summary>
+    /// Наполняет маску источниками света: посох, аура игрока, снаряды
+    /// (свет и огонь светят), портал и активированные кристаллы.
+ /// </summary>
+    private static void CollectLights(Game game, LightMask mask, Vector2 cam)
+    {
+        Player p = game.Player;
+
+        if (p.Alive)
+      {
+       Vector2 aim = GameMath.FromAngle(p.AimAngle);
+
+// Посох: узкий конус по направлению прицела. Он и есть главный
+   // источник - во всём остальном игрок почти ничего не видит.
+float cone = game.ChargeActive ? 0.34f : 0.52f;
+            float coneLen = game.ChargeActive ? 74f : 108f;
+  mask.Add(LightSource.Cone(p.Pos, aim, coneLen, cone,
+     GameMath.Mix(Elements.Color(p.LastElement), Palette.ExitOpen, 0.45f), 1.35f, 0.55f));
+
+     // Небольшой ореол вокруг игрока, чтобы не было слепой точки.
+            mask.Add(LightSource.Circle(p.Pos, 32f, Palette.Health, 0.8f, 0.8f));
+        }
+
+    // Снаряды свет и огонь дают малый ореол - иначе в темноте не видно,
+     // куда летят собственные огненные шары.
+        for (int i = 0; i < game.Projectiles.Count; i++)
+   {
+         Projectile pr = game.Projectiles[i];
+            if (pr.Dead) continue;
+
+      bool glows = pr.Element == Element.Light || pr.Element == Element.Fire;
+       if (!glows) continue;
+
+    float r = pr.Element == Element.Light ? 34f : 26f;
+            mask.Add(LightSource.Circle(pr.Pos, r, pr.Color, 0.62f, 0.8f));
+        }
+
+  if (game.Level.ExitOpen)
+     {
+    Vector2 exit = game.Level.ExitPos - cam;
+     mask.Add(LightSource.Circle(exit + cam, 52f, game.Level.Colors.ExitOpen, 0.75f, 0.7f));
+        }
+
+        // Активированные кристаллы светят постоянно и освещают комнату.
+   for (int i = 0; i < game.Crystals.Count; i++)
+   {
+        Crystal c = game.Crystals[i];
+        if (!c.Activated) continue;
+        Vector2 cp = c.Pos - cam;
+        mask.Add(LightSource.Circle(cp + cam, Crystal.LightRadius, Palette.ExitOpen, 0.95f, 0.7f));
+    }
+    }
+
+/// <summary>
+    /// Освещена ли точка прямо сейчас. В дуэли и на аренах темноты нет,
+    /// поэтому там ответ всегда "да".
+    /// </summary>
+    private bool IsLitFor(Vector2 world, Vector2 cam)
+    {
+        if (_mask is null || !DarknessEnabled(_gameRef!)) return true;
+        return _mask.IsLit(world, cam);
+    }
+
+    /// <summary>Уровень темноты в мировой точке: 0 - тьма, 1 - полный свет.</summary>
+    public float LightAt(Vector2 world)
+    {
+        if (_mask is null || !DarknessEnabled(_gameRef!)) return 1f;
+        return _mask.LevelAt(world, MaskCam);
+    }
+
+    /// <summary>Освещена ли точка настолько, чтобы её было видно.</summary>
+    public bool IsLit(Vector2 world, float threshold = 0.3f)
+   => LightAt(world) >= threshold;
+
+  private Game? _gameRef;
+
+    /// <summary>
+    /// Рисует содержимое маски в отдельный bitmap - используется
+  /// только в тестах, чтобы проверить темноту без запуска окна.
+    /// </summary>
+    public System.Drawing.Bitmap? MaskBitmap => _mask?.Snapshot();
 
     private void DrawTargetLock(Graphics g, Game game)
     {
@@ -297,6 +494,15 @@ g.Restore(state);
     }
 
     private readonly Minimap _minimap = new();
+
+    /// <summary>Маска темноты и света. Пересчитывается раз в кадр.</summary>
+    private LightMask? _mask;
+
+    /// <summary>Текущая освещённость для ИИ и проверок видимости.</summary>
+    public LightMask? Mask => _mask;
+
+    /// <summary>Положение камеры на момент последнего расчёта маски.</summary>
+    public Vector2 MaskCam { get; private set; }
 
 private void DrawHud(Graphics g, Game game)
     {

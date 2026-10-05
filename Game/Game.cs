@@ -246,7 +246,16 @@ internal sealed class Game
 
     public readonly List<Projectile> Projectiles = new();
 
-    public readonly List<Pickup> Pickups = new();
+public readonly List<Pickup> Pickups = new();
+
+    /// <summary>Кристаллы освещения на текущем уровне: по одному на комнату.</summary>
+    public readonly List<Crystal> Crystals = new();
+
+/// <summary>Идёт ли сейчас зарядка кристалла. Движение в это время заблокировано.</summary>
+    public bool ChargeActive;
+
+    /// <summary>Кристалл, который сейчас заряжается.</summary>
+    public Crystal? Charging;
 
     public readonly EffectSystem Effects = new();
 
@@ -515,12 +524,185 @@ internal sealed class Game
         Player.Teleport(Level.Spawn);
         Player.Buffer.Clear();
         Camera.SnapTo(Player.Pos, ViewSize, Level.PixelSize);
-        Level.ExitOpen = false;
-        LockedTarget = null;
+Level.ExitOpen = false;
+  LockedTarget = null;
         SpawnEnemies();
+  SpawnCrystals();
     }
 
-    private void SpawnEnemies()
+    /// <summary>
+    /// Ставит по кристаллу в каждую комнату обычного уровня. На аренах боссов
+    /// кристаллов нет: там один большой зал, он и так освещён целиком.
+    /// Позиция берётся из центра комнаты и проверяется на проходимость -
+ /// в центре может оказаться колонна.
+    /// </summary>
+    private void SpawnCrystals()
+    {
+        Crystals.Clear();
+        ChargeActive = false;
+   Charging = null;
+
+   if (Level.IsBoss || Level.Rooms.Count == 0) return;
+
+        for (int i = 0; i < Level.Rooms.Count; i++)
+  {
+   RoomRect room = Level.Rooms[i];
+   Vector2 pos = room.CenterPx;
+
+            // Ищем свободную точку рядом с центром, если в центре колонна.
+            if (Level.SolidAt(pos))
+      {
+        List<Vector2> spots = Level.RandomFloorPoints(Rng, 1, room.CenterPx, 0f);
+            if (spots.Count == 0) continue;
+        pos = spots[0];
+            }
+
+       Crystals.Add(new Crystal(pos, i, Rng.Range(0f, GameMath.Tau)));
+        }
+    }
+
+    /// <summary>
+    /// Зарядка кристалла. Игрок стоит на месте, направляет посох и держит
+    /// кнопку каста две секунды. Любой урон сбрасывает зарядку - это и есть
+    /// риск, который нужно пережить в темноте.
+    /// </summary>
+    private void UpdateCrystals(float dt)
+    {
+        bool wasCharging = ChargeActive;
+        ChargeActive = false;
+     Charging = null;
+
+     for (int i = 0; i < Crystals.Count; i++)
+        {
+            Crystal c = Crystals[i];
+            c.Update(dt);
+   }
+
+        if (Crystals.Count == 0) return;
+
+        Player p = Player;
+        if (!p.Alive || State != GameState.Playing || DuelMode) return;
+
+        // Кандидат - ближайший незаряженный кристалл в пределах досягаемости.
+  Crystal? target = null;
+        float best = Crystal.Reach;
+        for (int i = 0; i < Crystals.Count; i++)
+     {
+  Crystal c = Crystals[i];
+            if (c.Activated) continue;
+        float d = Vector2.Distance(p.Pos, c.Pos);
+     if (d < best)
+            {
+     best = d;
+      target = c;
+        }
+        }
+
+   if (target is null || !Input.Down(InputAction.Fire))
+        {
+   // Зарядку прервали: гасим и убираем свечение.
+         if (wasCharging && Charging is not null)
+       {
+      Charging.Reset();
+        Effects.Burst(Charging.Pos, Palette.Muted, 6, 60f, 2f, 0.25f);
+            }
+         return;
+        }
+
+        // Посох должен смотреть в кристалл, иначе зарядка не идёт.
+  Vector2 toCrystal = GameMath.Normalized(target.Pos - p.Pos);
+    float dot = Vector2.Dot(toCrystal, GameMath.FromAngle(p.AimAngle));
+        float aim = MathF.Acos(GameMath.Clamp(dot, -1f, 1f));
+   if (aim > 0.5f)
+      {
+   if (wasCharging && Charging is not null) Charging.Reset();
+            return;
+   }
+
+  ChargeActive = true;
+        Charging = target;
+        target.Charge = MathF.Min(Crystal.ChargeSeconds, target.Charge + dt);
+     target.ChargeTime = 0.3f;
+
+        // Чем ближе к готовности, тем гуще частицы - зарядка должна быть видна.
+     float k = target.ChargeRatio;
+        if (Rng.Chance(dt * (6f + k * 40f)))
+      {
+        float a = Rng.Range(0f, GameMath.Tau);
+    Vector2 around = target.Pos + GameMath.FromAngle(a) * 22f;
+  Effects.Burst(around, Palette.ExitOpen, 1, 40f + k * 60f, 1.5f + k, 0.3f, true);
+    }
+
+    if (target.Charge >= Crystal.ChargeSeconds) ActivateCrystal(target);
+  }
+
+    /// <summary>
+    /// Активация: вспышка, постоянный свет комнаты и вскрытие на карте.
+ /// Враги внутри получают сигнал и переходят в наступление - свет зовёт их.
+    /// </summary>
+    private void ActivateCrystal(Crystal c)
+    {
+        c.Activated = true;
+        c.Charge = Crystal.ChargeSeconds;
+     ChargeActive = false;
+      Charging = null;
+
+        // Комната открывается на карте целиком: силуэт и враги внутри
+      // становятся видны сразу, без захода в темноту.
+        Level.RevealRoom(c.RoomIndex);
+
+        Effects.Ring(c.Pos, 90f, Palette.ExitOpen, 0.9f, 4f, true);
+        Effects.Ring(c.Pos, 54f, Color.White, 0.6f, 2f);
+     Effects.Burst(c.Pos, Palette.ExitOpen, 34, 180f, 3f, 0.7f);
+        Flash(Palette.ExitOpen, 0.3f);
+        Camera.Add(5f);
+        AudioSystem.Play(Sfx.Portal, 0.6f);
+
+        Banner = "КОМНАТА ОСВЕЩЕНА";
+        BannerTimer = 2f;
+
+        // Свет привлекает врагов: из тёмных комнат начинают подтягиваться.
+        RouseRoom(c.RoomIndex);
+    }
+
+    /// <summary>
+    /// Враги в комнате получают цель, а соседние комнаты присылают подкрепление.
+/// Раньше враги реагировали только на расстояние, поэтому в темноте они
+    /// просто стояли - теперь свет их будит.
+    /// </summary>
+    private void RouseRoom(int roomIndex)
+    {
+     if (roomIndex < 0 || roomIndex >= Level.Rooms.Count) return;
+        RoomRect room = Level.Rooms[roomIndex];
+
+     int woken = 0;
+        for (int i = 0; i < Enemies.Count; i++)
+        {
+   Enemy e = Enemies[i];
+  if (e.Dead) continue;
+     if (Level.RoomAt(e.Pos) != roomIndex) continue;
+
+  e.Awakened = true;
+  e.AwakenTimer = 12f;
+          woken++;
+        }
+
+    // Подкрепление из соседних комнат: только те виды, что тянутся к свету.
+     List<Vector2> spawns = Level.RandomFloorPoints(Rng, 3, Player.Pos, 170f);
+   int added = 0;
+        foreach (Vector2 pos in spawns)
+   {
+      if (added >= 2) break;
+     Enemy spawn = Enemy.Create(EnemyKind.MiniSlime, pos, Depth, Rng);
+    spawn.Awakened = true;
+            spawn.AwakenTimer = 12f;
+ Enemies.Add(spawn);
+added++;
+     }
+
+   }
+
+  private void SpawnEnemies()
     {
         if (Level.IsBoss)
         {
@@ -1304,9 +1486,15 @@ case SettingsMenu.Row.Minimap:
         if (Input.Pressed(InputAction.NextRune)) Player.CycleRune(1);
         if (Input.Pressed(InputAction.PrevRune)) Player.CycleRune(-1);
 
-        UpdateAim();
+UpdateAim();
 
-        Player.Update(this, dt);
+  // Пока идёт зарядка кристалла, игрок стоит на месте. Сужающийся свет
+    // посоха - это и есть цена, которую платишь за решение постоять.
+    if (ChargeActive) Player.Vel = Vector2.Zero;
+
+  UpdateCrystals(dt);
+
+  Player.Update(this, dt);
 
         for (int i = 0; i < Enemies.Count; i++)
         {

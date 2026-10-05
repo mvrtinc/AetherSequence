@@ -1,4 +1,4 @@
-using System.Drawing;
+﻿using System.Drawing;
 using System.Drawing.Imaging;
 using System.Numerics;
 using System.Windows.Forms;
@@ -1252,6 +1252,113 @@ internal static class DevTools
         Console.WriteLine($"[menu] пункт «Выход» в главном меню: {(quitItem ? "есть" : "ОТСУТСТВУЕТ")}");
     }
 
+    /// <summary>
+ /// Темнота и кристаллы. Проверяет то, что легко сломать незаметно:
+ /// комнаты должны запоминаться, кристалл не должен включаться сам,
+    /// урон должен обрывать зарядку, а в дуэли темноты быть не должно.
+ /// </summary>
+    private static void TestDarknessAndCrystals()
+    {
+Console.WriteLine("[dark] темнота, кристаллы и свет");
+
+     Game game = NewGame();
+        game.Settings.GraphicsQuality = 2;
+        game.StartRun(31337u);
+        game.State = GameState.Playing;
+
+  bool rooms = game.Level.Rooms.Count > 0;
+        Console.WriteLine($"[dark] комнат запомнено: {game.Level.Rooms.Count}");
+
+      bool crystals = game.Crystals.Count > 0 && game.Crystals.Count <= game.Level.Rooms.Count;
+        Console.WriteLine($"[dark] кристаллов поставлено: {game.Crystals.Count}");
+
+        // Арена босса: кристаллов быть не должно, зал и так освещён.
+        Game arena = NewGame();
+        arena.StartRun(31337u);
+        arena.Depth = 5;
+        arena.BuildLevel();
+        bool arenaClean = arena.Crystals.Count == 0 && arena.Level.Rooms.Count == 1;
+        Console.WriteLine($"[dark] арена босса: кристаллов={arena.Crystals.Count}, комнат={arena.Level.Rooms.Count}");
+
+   // Зарядка вручную: два метра от кристалла, посох направлен на него.
+        Crystal? crystal = game.Crystals.Count > 0 ? game.Crystals[0] : null;
+        bool charged = false;
+        bool interrupted = false;
+
+        if (crystal is not null)
+     {
+    Vector2 spot = crystal.Pos + GameMath.FromAngle(MathF.PI) * 26f;
+            game.Player.Pos = spot;
+            game.Player.AimAngle = 0f;
+
+     // Держим кнопку каста и крутим кадры - кристалл должен зарядиться.
+      for (int i = 0; i < 200 && !crystal.Activated; i++)
+        {
+    game.Input.MouseDown(MouseButton.Left);
+         game.Update(1f / 60f);
+          }
+     charged = crystal.Activated;
+            game.Input.MouseUp(MouseButton.Left);
+
+      // Сброс: новый кристалл, урон посреди зарядки должен её оборвать.
+  Crystal? second = game.Crystals.Count > 1 ? game.Crystals[1] : null;
+            if (second is not null && !second.Activated)
+      {
+        game.Player.Pos = second.Pos + GameMath.FromAngle(MathF.PI) * 26f;
+            game.Player.AimAngle = 0f;
+
+       for (int i = 0; i < 60 && second.Charge < 0.4f; i++)
+      {
+      game.Input.MouseDown(MouseButton.Left);
+    game.Update(1f / 60f);
+    }
+
+       float before = second.Charge;
+    game.Player.TakeDamage(game, 5f, second.Pos);
+                for (int i = 0; i < 6; i++)
+       {
+   game.Input.MouseDown(MouseButton.Left);
+     game.Update(1f / 60f);
+           }
+       interrupted = second.Charge < before || !second.Activated;
+        game.Input.MouseUp(MouseButton.Left);
+    }
+      }
+
+        // Свет кристалла обязан появиться в маске.
+        bool lightsUp = false;
+        if (crystal is not null && crystal.Activated)
+    {
+      using Bitmap tiny = new(8, 8);
+  using Graphics tg = Graphics.FromImage(tiny);
+   game.Renderer.DrawWorldOnly(tg, game);
+  lightsUp = game.Renderer.LightAt(crystal.Pos) > 0.5f;
+        }
+
+        // Дуэль: темноты быть не должно, карта открыта целиком.
+Game duel = NewGame();
+        duel.StartRun(31337u);
+        DuelSession ds = new(duel);
+        ds.StartHosting(withBot: true);
+        bool duelLit = ds.Host is not null;
+        if (duelLit)
+        {
+         ds.StartDuelWithBot();
+            duel.State = GameState.Playing;
+            using Bitmap tiny = new(8, 8);
+     using Graphics tg = Graphics.FromImage(tiny);
+            duel.Renderer.DrawWorldOnly(tg, duel);
+      duelLit = duel.Renderer.LightAt(duel.Foe?.Pos ?? duel.Player.Pos) > 0.9f;
+        }
+        Console.WriteLine($"[dark] в дуэли темноты нет: {duelLit}");
+
+        bool ok = rooms && crystals && arenaClean && charged && interrupted && lightsUp && duelLit;
+  Console.WriteLine(ok
+            ? "[dark] ok"
+          : $"[dark] ОШИБКА: комнаты={rooms} кристаллы={crystals} арена={arenaClean} " +
+       $"зарядка={charged} прерывание={interrupted} свет={lightsUp} дуэль={duelLit}");
+    }
+
     public static void SelfTest()
     {
         Console.WriteLine("=== AETHER SEQUENCE self test ===");
@@ -1268,6 +1375,7 @@ internal static class DevTools
         TestSettingsRoundTrip();
         TestMenuExitFlow();
         TestPauseAndDuelExit();
+        TestDarknessAndCrystals();
         TestRunSimulation();
         Console.WriteLine("=== all checks finished ===");
     }

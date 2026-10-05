@@ -96,8 +96,8 @@ internal static class LevelThemes
         // 0 — КРИСТАЛЬНАЯ ГРОТА: холодный сине-фиолетовый камень, cyan-неон
         Build(
             "КРИСТАЛЬНАЯ ГРОТА",
-            floor: (17, 18, 33), floorAlt: (21, 22, 39), floorLine: (12, 13, 24),
-            wall: (16, 17, 32), wallTop: (40, 44, 78), wallEdge: (74, 82, 138), wallShadow: (6, 6, 13),
+floor: (36, 37, 62), floorAlt: (43, 44, 73), floorLine: (24, 25, 42),
+wall: (32, 33, 58), wallTop: (72, 76, 124), wallEdge: (110, 120, 180), wallShadow: (10, 10, 20),
             pillar: (36, 38, 68), pillarTop: (74, 80, 130),
             exitClosed: (34, 44, 74), exitOpen: (150, 220, 255),
             decor: new[]
@@ -114,8 +114,8 @@ internal static class LevelThemes
         // 1 — ЯДОВИТЫЕ ОЗЁРА: болотный зелёно-жёлтый, зелёный неон
         Build(
             "ЯДОВИТЫЕ ОЗЁРА",
-            floor: (24, 33, 27), floorAlt: (29, 40, 32), floorLine: (16, 23, 19),
-            wall: (21, 29, 24), wallTop: (66, 92, 56), wallEdge: (108, 140, 76), wallShadow: (8, 12, 9),
+            floor: (33, 42, 34), floorAlt: (40, 51, 40), floorLine: (22, 30, 24),
+      wall: (30, 38, 31), wallTop: (84, 112, 68), wallEdge: (124, 152, 88), wallShadow: (12, 17, 13),
             pillar: (33, 46, 33), pillarTop: (62, 84, 52),
             exitClosed: (44, 62, 30), exitOpen: (196, 255, 128),
             decor: new[]
@@ -132,8 +132,8 @@ internal static class LevelThemes
         // 2 — КОСТЯНАЯ КАТАКОМБА: серо-костяной, сухой, тёплый неон
         Build(
             "КОСТЯНАЯ КАТАКОМБА",
-            floor: (33, 31, 29), floorAlt: (40, 38, 35), floorLine: (23, 22, 20),
-            wall: (28, 27, 25), wallTop: (82, 78, 70), wallEdge: (122, 117, 105), wallShadow: (10, 10, 9),
+floor: (43, 40, 36), floorAlt: (52, 49, 44), floorLine: (30, 28, 25),
+       wall: (38, 36, 32), wallTop: (100, 94, 82), wallEdge: (142, 134, 118), wallShadow: (15, 14, 12),
             pillar: (41, 39, 36), pillarTop: (70, 66, 60),
             exitClosed: (56, 52, 44), exitOpen: (244, 234, 204),
             decor: new[]
@@ -150,8 +150,8 @@ internal static class LevelThemes
         // 3 — ПЕПЕЛЬНЫЕ ПУСТОШИ: багрово-чёрный, жар, оранжевый неон
         Build(
             "ПЕПЕЛЬНЫЕ ПУСТОШИ",
-            floor: (32, 24, 24), floorAlt: (39, 29, 28), floorLine: (22, 16, 16),
-            wall: (25, 18, 18), wallTop: (86, 50, 38), wallEdge: (134, 78, 50), wallShadow: (11, 7, 7),
+            floor: (44, 32, 31), floorAlt: (54, 39, 36), floorLine: (30, 22, 21),
+    wall: (34, 25, 24), wallTop: (104, 62, 46), wallEdge: (156, 94, 62), wallShadow: (14, 9, 9),
             pillar: (40, 28, 26), pillarTop: (78, 48, 36),
             exitClosed: (62, 34, 26), exitOpen: (255, 172, 92),
             decor: new[]
