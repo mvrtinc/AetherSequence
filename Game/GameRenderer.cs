@@ -225,17 +225,60 @@ g.Restore(state);
         Palette.Fill(g, c, screen.X + r - t, screen.Y + r - arm, t, arm);
     }
 
+/// <summary>
+    /// Свой прицел. Раньше это были две тонкие линии - на фоне пещеры
+    /// он терялся и путался с системным курсором. Теперь это ретиска:
+    /// четыре засечки с разрывом по центру, рамка и точка в центре, плюс
+    /// дуга вокруг, которая сжимается при наведении на цель.
+    ///
+    /// Рисуется в мировом слое (640x360) и растягивается вместе с игрой,
+    /// поэтому толщина линий кратна пикселю мира и не мылится.
+    /// </summary>
     private void DrawCrosshair(Graphics g, Game game)
     {
         if (!game.Settings.OwnCrosshair || !game.Input.MouseInside) return;
         if (game.State != GameState.Playing && game.State != GameState.LevelUp) return;
-        float x = game.Input.Mouse.X;
-        float y = game.Input.Mouse.Y;
-        Color c = Palette.Fade(game.Player.ElementTint, 0.85f);
-        Palette.Fill(g, c, x - 8f, y - 0.5f, 16f, 1f);
-        Palette.Fill(g, c, x - 0.5f, y - 8f, 1f, 16f);
-        Palette.Fill(g, Palette.Fade(Color.White, 0.95f), x - 0.5f, y - 0.5f, 1f, 1f);
-        Text.DrawCentered(g, Elements.Glyph(game.Player.SelectedElement), Text.Tiny, Palette.Fade(c, 0.9f), x, y - 17f);
+
+        float x = MathF.Round(game.Input.Mouse.X) + 0.5f;
+        float y = MathF.Round(game.Input.Mouse.Y) + 0.5f;
+        Color tint = game.Player.ElementTint;
+        Color c = Palette.Fade(tint, 0.9f);
+        Color dim = Palette.Fade(tint, 0.35f);
+
+   // Разрыв по центру, чтобы не затыкать точку прицеливания.
+        const float gap = 3f;
+        const float len = 5f;
+
+   // Четыре засечки: ближняя часть яркая, дальняя - приглушённая.
+        Palette.Fill(g, c, x - gap - len, y - 0.5f, len, 1f);
+        Palette.Fill(g, dim, x + gap, y - 0.5f, len, 1f);
+        Palette.Fill(g, c, x - 0.5f, y - gap - len, 1f, len);
+        Palette.Fill(g, dim, x - 0.5f, y + gap, 1f, len);
+
+   // Угловые скобки - они читаются как прицел даже на пёстром фоне.
+        const float br = 2f;
+  Palette.Fill(g, Palette.Fade(Color.White, 0.35f), x - gap - br, y - gap - br, 1f, br);
+    Palette.Fill(g, Palette.Fade(Color.White, 0.35f), x - gap - br, y - gap, br, 1f);
+        Palette.Fill(g, Palette.Fade(Color.White, 0.35f), x + gap, y - gap - br, 1f, br);
+        Palette.Fill(g, Palette.Fade(Color.White, 0.35f), x + gap + br - 1f, y - gap, br, 1f);
+        Palette.Fill(g, Palette.Fade(Color.White, 0.35f), x - gap - br, y + gap, 1f, br);
+    Palette.Fill(g, Palette.Fade(Color.White, 0.35f), x - gap, y + gap + br - 1f, br, 1f);
+        Palette.Fill(g, Palette.Fade(Color.White, 0.35f), x + gap, y + gap, 1f, br);
+        Palette.Fill(g, Palette.Fade(Color.White, 0.35f), x + gap + br - 1f, y + gap + br - 1f, br, 1f);
+
+   // Центральная точка - главный ориентир.
+        Palette.Fill(g, Palette.Fade(Color.Black, 0.55f), x - 1f, y - 1f, 3f, 3f);
+        Palette.Fill(g, Palette.Fade(Color.White, 0.95f), x, y, 1f, 1f);
+
+   // Дуга вокруг: наведение на цель подсвечивается ярче.
+        Enemy? lockTarget = game.Settings.ShowTargetLock ? game.LockedTarget : null;
+        bool onTarget = lockTarget is not null && !lockTarget.Dead;
+        float ring = onTarget ? 9f + MathF.Sin(game.Time * 7f) * 0.8f : 9f;
+        Color rc = onTarget ? Palette.Fade(Palette.Danger, 0.95f) : Palette.Fade(tint, 0.5f);
+        Palette.Stroke(g, rc, x - ring, y - ring, ring * 2f, ring * 2f);
+
+   // Глиф стихии - какая руна сейчас выбрана.
+  Text.DrawCentered(g, Elements.Glyph(game.Player.SelectedElement), Text.Tiny, Palette.Fade(c, 0.95f), x, y - 19f);
     }
 
     private void DrawScreenEffects(Graphics g, Game game)
@@ -485,12 +528,16 @@ Text.Draw(g, $"{game.Fps:0} FPS", Text.Tiny, Palette.Fade(Palette.Xp, 0.75f), 8f
         DrawConfirm(g, game);
     }
 
-    private void DrawDuelHud(Graphics g, Game game)
+private void DrawDuelHud(Graphics g, Game game)
     {
         DuelSession duel = game.Duel!;
         float top = HudTop;
 
-        Palette.Fill(g, Palette.Fade(Palette.Panel, 0.94f), 0f, top, Width, Height - top);
+   // Миникарта и в дуэли: без неё соперника не найти в пещере.
+     // Раньше она рисовалась только в обычном HUD и в дуэли пропадала.
+        if (game.Settings.Minimap) _minimap.Draw(g, game);
+
+    Palette.Fill(g, Palette.Fade(Palette.Panel, 0.94f), 0f, top, Width, Height - top);
         Palette.Stroke(g, Palette.Fade(Palette.PanelEdge, 0.7f), 0f, top, Width, Height - top);
 
         float w = 168f;

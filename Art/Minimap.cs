@@ -101,36 +101,57 @@ if (boxR - boxL > 1f && boxB - boxT > 1f)
                 Y + _offsetY + (p.Pos.Y / level.PixelSize.Y) * (level.H * _scale) - 0.5f, 1.5f, 1.5f);
         }
 
-        // враги
+// Враги. Раньше точки рисовались для всех, поэтому враг за стеной
+        // светился на миникарте и выглядел так, будто стоит в стене.
+        // Теперь видны только те, до кого есть линия видимости.
+        Vector2 eye = game.Player.Pos;
         foreach (Enemy e in game.Enemies)
         {
             if (e.Dead) continue;
+
             bool boss = e.IsBoss;
-            float r = boss ? 2.5f : 1.5f;
-            Color c = boss ? Palette.Fade(Palette.Gold, 0.95f) : Palette.Fade(Palette.Danger, 0.9f);
-            float ex = X + _offsetX + (e.Pos.X / level.PixelSize.X) * (level.W * _scale);
-            float ey = Y + _offsetY + (e.Pos.Y / level.PixelSize.Y) * (level.H * _scale);
-            Palette.Fill(g, c, ex - r, ey - r, r * 2f, r * 2f);
+            // Босса видно всегда: потерять его из виду в толпе - плохо.
+            if (!boss && !level.LineClear(eye, e.Pos)) continue;
+
+      float r = boss ? 2.5f : 1.5f;
+  Color c = boss ? Palette.Fade(Palette.Gold, 0.95f) : Palette.Fade(Palette.Danger, 0.9f);
+      float ex = X + _offsetX + (e.Pos.X / level.PixelSize.X) * (level.W * _scale);
+float ey = Y + _offsetY + (e.Pos.Y / level.PixelSize.Y) * (level.H * _scale);
+     Palette.Fill(g, c, ex - r, ey - r, r * 2f, r * 2f);
         }
 
-        // герой: конус прицела + белая точка
+        // В дуэли соперник должен читаться так же, как свои: точка ярче и
+        // с нимпульсирующим ореолом, иначе его легко спутать с врагом.
+        if (game.DuelMode && game.Foe is { Alive: true } foe)
+        {
+            float fx = X + _offsetX + (foe.Pos.X / level.PixelSize.X) * (level.W * _scale);
+    float fy = Y + _offsetY + (foe.Pos.Y / level.PixelSize.Y) * (level.H * _scale);
+      float pulse = 0.5f + 0.5f * MathF.Sin((float)game.Time * 6f);
+   Palette.Fill(g, Palette.Fade(Palette.ExitOpen, 0.35f + pulse * 0.45f), fx - 2.5f, fy - 2.5f, 5f, 5f);
+      Palette.Fill(g, Palette.Fade(Color.White, 0.95f), fx - 1.5f, fy - 1.5f, 3f, 3f);
+        }
+
+// Герой: конус прицела + белая точка
         if (game.Player.Alive)
         {
-            float px = X + _offsetX + (game.Player.Pos.X / level.PixelSize.X) * (level.W * _scale);
-            float py = Y + _offsetY + (game.Player.Pos.Y / level.PixelSize.Y) * (level.H * _scale);
+ float px = X + _offsetX + (game.Player.Pos.X / level.PixelSize.X) * (level.W * _scale);
+   float py = Y + _offsetY + (game.Player.Pos.Y / level.PixelSize.Y) * (level.H * _scale);
 
-            float len = 7f;
-            Vector2 dir = GameMath.FromAngle(game.Player.AimAngle);
-            for (int i = 3; i <= (int)len; i++)
-            {
-                float t = i / len;
-                Palette.Fill(g, Palette.Fade(Palette.Paper, 0.28f * (1f - t)),
-                    px + dir.X * i * 0.6f - 0.5f, py + dir.Y * i * 0.6f - 0.5f, 1.2f, 1.2f);
-            }
+    float len = 7f;
+     Vector2 dir = GameMath.FromAngle(game.Player.AimAngle);
+      for (int i = 3; i <= (int)len; i++)
+      {
+            float t = i / len;
+      Palette.Fill(g, Palette.Fade(Palette.Paper, 0.28f * (1f - t)),
+   px + dir.X * i * 0.6f - 0.5f, py + dir.Y * i * 0.6f - 0.5f, 1.2f, 1.2f);
+  }
 
-            Palette.Fill(g, Palette.Fade(System.Drawing.Color.White, 0.95f), px - 1.5f, py - 1.5f, 3f, 3f);
-            Palette.Stroke(g, Palette.Fade(System.Drawing.Color.Black, 0.6f), px - 2.5f, py - 2.5f, 5f, 5f);
-        }
+ // Свой герой виден всегда, даже прижатый к стене, поэтому рисуем его
+  // в последнюю очередь и с тёмной обводкой - точка не потеряется
+   // на плитах и линиях комнат.
+Palette.Fill(g, Palette.Fade(System.Drawing.Color.Black, 0.75f), px - 2.5f, py - 2.5f, 5f, 5f);
+ Palette.Fill(g, Palette.Fade(System.Drawing.Color.White, 0.95f), px - 1.5f, py - 1.5f, 3f, 3f);
+    }
 
         // Тонкая рамка в цвет неона темы - миникарта вписывается в общий стиль.
         Color edge = level.Colors.Neon;

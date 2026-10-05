@@ -3,6 +3,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Numerics;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using AetherSequence.Audio;
 using AetherSequence.Core;
@@ -23,7 +24,6 @@ internal sealed class GameForm : Form
     private double _accumulator;
     private bool _fullscreen;
     private Rectangle _restoreBounds;
-    private bool _cursorHidden;
 
     public GameForm()
     {
@@ -264,7 +264,6 @@ ComputeViewport(out float scale, out PointF origin);
         _game.Input.MouseLeave();
         Cursor.Clip = Rectangle.Empty;
         Cursor.Show();
-        _cursorHidden = false;
     }
 
     protected override void OnActivated(EventArgs e)
@@ -279,7 +278,6 @@ ComputeViewport(out float scale, out PointF origin);
         _game.Input.ClearAll();
         Cursor.Clip = Rectangle.Empty;
         Cursor.Show();
-        _cursorHidden = false;
     }
 
     protected override void OnResize(EventArgs e)
@@ -322,22 +320,56 @@ ComputeViewport(out float scale, out PointF origin);
         _ => MouseButton.None,
     };
 
-    private void UpdateCursor()
+private void UpdateCursor()
     {
-        Cursor = Cursors.Cross;
-        if (_settings.OwnCrosshair && !_cursorHidden)
+        // Свой прицел рисует игра, поэтому системный курсор нужно убрать.
+        // Cursor.Hide() не годится: Windows восстанавливает курсор при каждом
+        // движении мыши, и на экране оказываются два прицела сразу.
+        // Надёжный способ - перехватить WM_SETCURSOR (см. WndProc).
+        if (_settings.OwnCrosshair)
         {
-            Cursor.Hide();
-            _cursorHidden = true;
+            SetBlankCursor();
         }
-        else if (!_settings.OwnCrosshair && _cursorHidden)
+        else
         {
-            Cursor.Show();
-            _cursorHidden = false;
+            Cursor = Cursors.Cross;
         }
+
         Cursor.Clip = _settings.LockCursor && !_fullscreen
             ? new Rectangle(Bounds.Left, Bounds.Top, Bounds.Width, Bounds.Height)
             : Rectangle.Empty;
+    }
+
+    /// <summary>
+    /// Гасит системный курсор через Win32, а не через Cursor.Hide().
+    /// SetCursor действует до следующего сообщения от мыши, поэтому
+    /// вызывать его нужно на каждый WM_SETCURSOR - это и делает WndProc.
+    /// </summary>
+    [DllImport("user32.dll")]
+    private static extern int SetCursor(IntPtr cursor);
+
+    private static readonly IntPtr BlankCursor = IntPtr.Zero;
+
+    private void SetBlankCursor() => SetCursor(BlankCursor);
+
+    /// <summary>
+    /// Windows присылает WM_SETCURSOR перед каждой отрисовкой курсора и
+    /// восстанавливает системный из класса окна. Здесь мы каждый раз
+    /// возвращаем пустой курсор, пока включён свой прицел - иначе рядом
+    /// с нашим прицелом появляется второй, системный.
+    /// </summary>
+    protected override void WndProc(ref Message m)
+    {
+        const int WM_SETCURSOR = 0x0020;
+
+        if (m.Msg == WM_SETCURSOR && _settings.OwnCrosshair)
+        {
+            SetCursor(IntPtr.Zero);
+            m.Result = IntPtr.Zero;
+            return;
+        }
+
+        base.WndProc(ref m);
     }
 
     private void ToggleFullscreen() => ApplyFullscreen(!_fullscreen);
