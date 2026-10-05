@@ -9,7 +9,7 @@
 
 Готовая сборка — в разделе **[Releases](../../releases/latest)** или напрямую:
 
-**[⬇ Скачать Aether Sequence v1.0 (zip, 46 МБ)](../../releases/download/v1.0/AetherSequence-v1.0.zip)**
+**[⬇ Скачать Aether Sequence v1.1 (zip, 46 МБ)](../../releases/download/v1.1/AetherSequence-v1.1.zip)**
 
 Распакуйте архив и запустите `AetherSequence.exe`. Windows 10/11, ничего
 доустанавливать не нужно — всё внутри одного файла.
