@@ -65,6 +65,11 @@ internal static class Program
             DevTools.HudShot(args[1]);
             return;
         }
+        if (args.Length > 1 && args[0] == "--classshot")
+ {
+  DevTools.ClassShots(args[1]);
+            return;
+        }
         Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);

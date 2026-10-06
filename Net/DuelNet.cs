@@ -25,6 +25,9 @@ internal sealed class DuelPeer
     public bool Connected = true;
     public long LastSeen = Environment.TickCount64;
 
+    /// <summary>Класс персонажа. Приезжает в Hello от гостя и уходит в Welcome.</summary>
+    public byte PlayerClass;
+
     /// <summary>Последний принятый пакет ввода (для удалённых игроков).</summary>
     public RemoteInputState Input = new();
 
@@ -65,6 +68,9 @@ internal struct PeerSnapshot
     public int Rune;
     public float HitFlash;
     public int Flow;
+
+    /// <summary>Класс персонажа. Без него соперник рисовался бы как маг.</summary>
+    public byte PlayerClass;
 }
 
 internal struct ProjectileSnapshot

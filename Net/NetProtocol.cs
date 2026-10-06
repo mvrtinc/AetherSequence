@@ -29,7 +29,13 @@ internal enum MsgKind : byte
 
 internal static class NetProtocol
 {
-    public const int Version = 3;
+    // Версия 4: в Hello, Welcome и снапшот добавлен класс персонажа.
+    // Поднимать обязательно: формат сообщений позиционный и не версионируется
+    // по частям. Без подъёма старый гость и новая игра договорятся и разъедут
+    // поток снапшота - дуэль молча рассыплется. С подъёмом хост честно
+    // отклоняет гостя с понятным сообщением, а комнаты другой версии
+    // исчезают из списка находок.
+    public const int Version = 4;
     public const int DiscoveryPort = 47800;
     public const int GamePort = 47801;
     public const int MaxNickLength = 18;
@@ -109,9 +115,9 @@ internal static class NetProtocol
 
     private static void WritePeer(BinaryWriter writer, Player p)
     {
-        writer.Write((byte)(ReferenceEquals(p, Game.CurrentHostPlayer) ? 0 : 1));
+     writer.Write((byte)(ReferenceEquals(p, Game.CurrentHostPlayer) ? 0 : 1));
         writer.Write(p.Pos.X);
-        writer.Write(p.Pos.Y);
+    writer.Write(p.Pos.Y);
         writer.Write(p.Hp);
         writer.Write(p.MaxHp);
         writer.Write(p.Mana);
@@ -119,7 +125,11 @@ internal static class NetProtocol
         writer.Write(p.Alive);
         writer.Write(p.Dashing);
         writer.Write((byte)GameMath.ClampI(p.SelectedRune, 0, 5));
-        writer.Write(p.HitFlash);
+    writer.Write(p.HitFlash);
         writer.Write((byte)GameMath.ClampI((int)(p.Flow * 10f), 0, 10));
+
+        // Класс пишем последним: добавление поля в конец не сдвигает
+        // остальные, и отлаживать рассинхрон проще.
+        writer.Write((byte)CharacterClasses.Clamp((int)p.Class));
     }
 }

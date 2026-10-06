@@ -67,17 +67,51 @@ internal static class DevTools
         s.UiScale = 1.15f;
         s.Aim = AimMode.AutoTarget;
         s.SetBinding(InputAction.Dash, Keys.F);
+        s.PlayerClass = PlayerClass.Archer;
+        s.SetBestDepth(PlayerClass.Archer, 9);
+        s.SetBestScore(PlayerClass.Archer, 7777);
+        s.SetBestKills(PlayerClass.Archer, 51);
+        s.SetBestDepth(PlayerClass.Mage, 4);
+        s.CountRun(PlayerClass.Mage);
         s.Save();
 
         Settings reloaded = Settings.Load(dir);
-        bool ok = MathF.Abs(reloaded.ComboWindow - 0.31f) < 0.001f
+    bool ok = MathF.Abs(reloaded.ComboWindow - 0.31f) < 0.001f
             && MathF.Abs(reloaded.AutoAimDegrees - 50f) < 0.001f
             && MathF.Abs(reloaded.UiScale - 1.15f) < 0.001f
             && reloaded.Aim == AimMode.AutoTarget
-            && reloaded.BindingLabel(InputAction.Dash).Contains("F", StringComparison.Ordinal);
-        Console.WriteLine(
-            $"[settings] round-trip={(ok ? "OK" : "FAIL")} окно={reloaded.ComboWindow}с автонаведение={reloaded.AutoAimDegrees} интерфейс={reloaded.UiScale} рывок='{reloaded.BindingLabel(InputAction.Dash)}'");
-        if (!ok) throw new InvalidOperationException("settings round-trip failed");
+            && reloaded.PlayerClass == PlayerClass.Archer
+       && reloaded.BestDepthOf(PlayerClass.Archer) == 9
+ && reloaded.BestScoreOf(PlayerClass.Archer) == 7777
+   && reloaded.BestKillsOf(PlayerClass.Archer) == 51
+   && reloaded.BestDepthOf(PlayerClass.Mage) == 4
+    && reloaded.RunsOf(PlayerClass.Mage) == 1
+       && reloaded.RunsCompleted == 1
+ && reloaded.BindingLabel(InputAction.Dash).Contains("F", StringComparison.Ordinal);
+
+     Console.WriteLine(
+     $"[settings] round-trip={(ok ? "OK" : "FAIL")} окно={reloaded.ComboWindow}с " +
+    $"автонаведение={reloaded.AutoAimDegrees} интерфейс={reloaded.UiScale} " +
+    $"класс={CharacterClasses.Name(reloaded.PlayerClass)} " +
+   $"рекордСтрелка={reloaded.BestDepthOf(PlayerClass.Archer)}/{reloaded.BestScoreOf(PlayerClass.Archer)} " +
+ $"рекордМаг={reloaded.BestDepthOf(PlayerClass.Mage)} забегов={reloaded.RunsCompleted} " +
+     $"рывок='{reloaded.BindingLabel(InputAction.Dash)}'");
+
+        // Миграция: файл, записанный версией без классов, не должен обнулить
+        // прогресс. Старые одиночные рекорды переезжают в ячейку мага.
+        string legacyPath = Path.Combine(dir, "legacy.json");
+        File.WriteAllText(legacyPath,
+       "{\"GraphicsQuality\":2,\"PlayerClass\":0,\"BestDepth\":11,\"BestScore\":4242,\"BestKills\":33,\"RunsCompleted\":7}");
+
+        Settings legacy = Settings.LoadFromFile(legacyPath);
+  bool migrated = legacy.BestDepthOf(PlayerClass.Mage) == 11
+     && legacy.BestScoreOf(PlayerClass.Mage) == 4242
+            && legacy.BestKillsOf(PlayerClass.Mage) == 33;
+        Console.WriteLine($"[settings] перенос старых рекордов: {(migrated ? "OK" : "FAIL")} " +
+            $"маг={legacy.BestDepthOf(PlayerClass.Mage)}/{legacy.BestScoreOf(PlayerClass.Mage)}/" +
+            $"убийств={legacy.BestKillsOf(PlayerClass.Mage)}");
+
+        if (!ok || !migrated) throw new InvalidOperationException("settings round-trip failed");
     }
 
     public static void Shots(string directory)
@@ -153,7 +187,9 @@ internal static class DevTools
         Save(renderer, menu, Path.Combine(directory, "8-pause.png"));
 
         menu.State = GameState.Settings;
-        menu.SettingsRow = 1;
+        // Строка 0 - "КЛАСС ПЕРСОНАЖА": на снимке настроек должен быть
+        // виден новый пункт, иначе релиз с классами снимается вслепую.
+        menu.SettingsRow = 0;
         for (int i = 0; i < 10; i++) menu.Update(1.0 / 60.0);
         Save(renderer, menu, Path.Combine(directory, "9-settings.png"));
 
@@ -229,8 +265,8 @@ internal static class DevTools
         game.Update(1.0 / 60.0);
         Capture("hud-1080p-cards.png", game, 3f, "карточки дара");
 
-        game.State = GameState.Settings;
-        game.SettingsRow = 12;
+    game.State = GameState.Settings;
+        game.SettingsRow = (int)SettingsMenu.Row.Class;
         game.Update(1.0 / 60.0);
         Capture("hud-1080p-settings.png", game, 3f, "настройки");
 
@@ -262,12 +298,175 @@ internal static class DevTools
         game.Confirm = ConfirmKind.None;
         game.State = GameState.Title;
         game.TitleRow = 3;
-        game.Settings.BestDepth = 7;
-        game.Settings.BestScore = 12480;
-        game.Settings.BestKills = 63;
+        game.Settings.SetBestDepth(game.Settings.PlayerClass, 7);
+  game.Settings.SetBestScore(game.Settings.PlayerClass, 12480);
+        game.Settings.SetBestKills(game.Settings.PlayerClass, 63);
+        game.Settings.SetBestDepth(PlayerClass.Archer, 5);
+        game.Settings.SetBestScore(PlayerClass.Archer, 8310);
+        game.Settings.SetBestKills(PlayerClass.Archer, 41);
         game.Update(1.0 / 60.0);
         Capture("hud-1080p-title.png", game, 3f, "главное меню: выход + рекорд");
         game.State = resume;
+    }
+
+    /// <summary>
+    /// Кадры классов: оба героя в бою в тёмной пещере, портреты в меню и
+    /// зажжённые маяки каждого класса. Классы различаются в первую очередь
+    /// светом и видом маяка, поэтому смотреть на них имеет смысл в темноте.
+    /// </summary>
+    public static void ClassShots(string directory)
+    {
+        Directory.CreateDirectory(directory);
+        GameRenderer renderer = new();
+
+        for (int i = 0; i < CharacterClasses.Count; i++)
+        {
+            PlayerClass cls = (PlayerClass)i;
+            string tag = CharacterClasses.Name(cls);
+
+            // Бой: персонаж стоит в неосвещённой комнате, чтобы был виден
+            // только его собственный свет - ореол у мага, факел у стрелка.
+            Game game = NewGame();
+            game.Settings.GraphicsQuality = 2;
+            game.Settings.PlayerClass = cls;
+            game.StartRun(4242u + (uint)i);
+            game.State = GameState.Playing;
+            game.Player.AimAngle = -MathF.PI * 0.35f;
+            game.Player.CastFlash = 0.5f;
+
+      // Отходим от маяка, чтобы свет шёл только от героя, и ставим его
+   // в чистой точке пола: вокруг игрока в темноте ничего не должно
+            // отвлекать от снимка оружия.
+  Crystal? near = null;
+      float best = float.MaxValue;
+            foreach (Crystal c in game.Crystals)
+            {
+float d = Vector2.Distance(game.Player.Pos, c.Pos);
+       if (d > 60f && d < best) { best = d; near = c; }
+            }
+            if (near is not null)
+  {
+                game.Player.Pos = near.Pos + new Vector2(0f, 90f);
+                game.Camera.SnapTo(game.Player.Pos, game.ViewSize, game.Level.PixelSize);
+ }
+
+            // Глубина 1, у которой на экране сразу баннер забега: он
+            // перекрывает ровно ту область, где стоит герой. Уходим
+            // на глубину поглубже, где баннер уже не появляется.
+            game.Depth = 2;
+            game.BuildLevel();
+            game.Player.Pos = near is not null ? near.Pos + new Vector2(0f, 90f) : game.Level.Spawn;
+            game.Camera.SnapTo(game.Player.Pos, game.ViewSize, game.Level.PixelSize);
+            game.Banner = string.Empty;
+            game.BannerTimer = 0f;
+
+            // Прицел вбок и каст в разгаре: видно оружие в руках и лук
+            // в натяжении, иначе на снимке персонаж - просто точка.
+            // Прицел вбок и каст в разгаре: видно оружие в руках и лук
+            // в натяжении, иначе на снимке персонаж - просто точка.
+            // Ввод не трогаем: Update обнулит CastFlash сам.
+Vector2 fightStand = game.Player.Pos;
+            float aimAngle = -MathF.PI * 0.3f;
+  for (int f = 0; f < 12; f++)
+   {
+          game.Player.Pos = fightStand;
+            game.Player.AimAngle = aimAngle;
+    game.Player.CastFlash = 0.5f;
+         game.Update(1f / 60f);
+  }
+
+            // Update обнулил вспышку и сдвинул камеру - возвращаем всё
+            // в нужное состояние сразу перед отрисовкой.
+      game.Player.Pos = fightStand;
+   game.Player.AimAngle = aimAngle;
+            game.Player.CastFlash = 0.5f;
+            game.Camera.SnapTo(game.Player.Pos, game.ViewSize, game.Level.PixelSize);
+            game.Banner = string.Empty;
+     game.BannerTimer = 0f;
+            Save(renderer, game, Path.Combine(directory, $"class-{i}-fight.png"));
+
+            // Тот же кадр с зажжённым маяком: у мага кристалл, у стрелка костёр.
+            Game lit = NewGame();
+            lit.Settings.GraphicsQuality = 2;
+            lit.Settings.PlayerClass = cls;
+            lit.StartRun(4242u + (uint)i);
+            lit.State = GameState.Playing;
+  if (lit.Crystals.Count > 0)
+            {
+          Crystal c = lit.Crystals[0];
+
+        // Держим дистанцию каждый кадр: игнора столкновений в тесте нет,
+      // а Reach сравнивается строго, и на ровно 46 px цель не находится.
+    Vector2 stand = c.Pos + new Vector2(0f, 40f);
+    for (int f = 0; f < 200 && !c.Activated; f++)
+      {
+   lit.Player.Pos = stand;
+           lit.Player.AimAngle = -MathF.PI * 0.5f;
+       lit.Input.KeyDown(Keys.F);
+              lit.Update(1f / 60f);
+            }
+    lit.Input.KeyUp(Keys.F);
+
+        // Отходим в сторону и прижимаем камеру к игроку, иначе маяк уезжает
+     // за край кадра и на снимке его не видно. Эффект зажигания к этому
+        // моменту должен проиграть полностью - иначе кольца накрывают
+   // сам костёр и разглядеть его невозможно.
+        lit.Player.Pos = c.Pos + new Vector2(56f, 40f);
+        lit.Player.AimAngle = -MathF.PI * 0.75f;
+        lit.Camera.SnapTo(lit.Player.Pos, lit.ViewSize, lit.Level.PixelSize);
+        for (int f = 0; f < 90; f++) lit.Update(1f / 60f);
+            }
+            Save(renderer, game: lit, Path.Combine(directory, $"class-{i}-beacon.png"));
+
+            // Портрет в меню выбора - крупно, чтобы различать классы.
+            Game menu = NewGame();
+            menu.Settings.PlayerClass = cls;
+            menu.StartRun(4242u + (uint)i);
+            menu.State = GameState.Title;
+            menu.TitleRow = 0;
+            for (int f = 0; f < 30; f++) menu.Update(1f / 60f);
+            Save(renderer, menu, Path.Combine(directory, $"class-{i}-menu.png"));
+
+            Console.WriteLine($"[class] снято: {tag}");
+        }
+
+        SaveSpriteSheet(CharacterClasses.Body(PlayerClass.Archer), CharacterClasses.Body(PlayerClass.Mage),
+            Path.Combine(directory, "class-sprites.png"), 4);
+
+   Console.WriteLine("=== class shots done ===");
+    }
+
+    /// <summary>
+    /// Спрайты классов крупным планом, без сцены и темноты. Нужен, чтобы
+    /// разбирать огреха геометрии: в бою персонаж занимает 16 px и любой
+    /// промах на один пиксель не виден глазом.
+    /// </summary>
+    private static void SaveSpriteSheet(Sprite archer, Sprite mage, string path, int scale)
+    {
+        using Bitmap bitmap = new(220, 120, PixelFormat.Format32bppPArgb);
+        using Graphics g = Graphics.FromImage(bitmap);
+        g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
+  g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
+      g.Clear(Color.FromArgb(16, 14, 24));
+
+        // Сетка: на ней видно, ровно ли стоят пиксели.
+        for (int i = 0; i <= 220; i += 20)
+     Palette.Fill(g, Color.FromArgb(30, 28, 44), i, 0f, 1f, 120f);
+        for (int j = 0; j <= 120; j += 20)
+      Palette.Fill(g, Color.FromArgb(30, 28, 44), 0f, j, 220f, 1f);
+
+  Text.Draw(g, "МАГ 16X20", Text.Tiny, Palette.Muted, 26f, 6f);
+        Text.Draw(g, "СТРЕЛОК 16X20", Text.Tiny, Palette.Muted, 126f, 6f);
+
+    mage.Draw(g, 50f, 24f, false, (float)scale, 0f);
+   Player.DrawHeld(g, new Vector2(50f + 8f * scale, 24f + 10f * scale), Vector2.UnitX, 0f,
+            PlayerClass.Mage, false, 0f, CharacterClasses.AuraColor(PlayerClass.Mage));
+
+  archer.Draw(g, 150f, 24f, false, (float)scale, 0f);
+        Player.DrawHeld(g, new Vector2(150f + 8f * scale, 24f + 10f * scale), Vector2.UnitX, 0.5f,
+         PlayerClass.Archer, false, 0f, CharacterClasses.AuraColor(PlayerClass.Archer));
+
+        bitmap.Save(path, ImageFormat.Png);
     }
 
     private static void Save(GameRenderer renderer, Game game, string path)
@@ -661,6 +860,88 @@ internal static class DevTools
         }
     }
 
+    /// <summary>
+    /// Round-trip снапшота: запись хостом и разбор клиентом в одном процессе.
+    ///
+    /// Раньше этого не было вообще. Пробный клиент в --nettest уничтожался
+    /// сразу после Welcome, до старта матча, поэтому ReadSnapshot не
+/// вызывался ни разу. Формат снапшота позиционный и без тегов: любое
+    /// расхождение WritePeer и ReadSnapshot сдвигает поток и ломает разбор
+ /// всего, что идёт после, - а найти это можно было бы только двумя людьми
+    /// на двух компьютерах.
+    /// </summary>
+    private static void TestSnapshotRoundTrip()
+    {
+        Console.WriteLine("[net] запись и разбор снапшота");
+
+        Game game = NewGame();
+        DuelSession duel = new(game);
+        duel.Nick = "ХОСТ";
+        duel.StartHosting(withBot: true);
+        duel.StartDuelWithBot();
+
+    // Классы делаем разными: одинаковые не отличили бы, что байт класса
+        // реально пишется и читается в нужном месте.
+        game.Player.Class = PlayerClass.Mage;
+        game.Player.ApplyClass();
+        if (game.Foe is not null)
+     {
+    game.Foe.Class = PlayerClass.Archer;
+      game.Foe.ApplyClass();
+        }
+        duel.BotClass = PlayerClass.Archer;
+
+        // Пара снарядов нужна: снапшот читается целиком, и если сдвинулось
+        // начало блока снарядов, ошибка проявится именно на них.
+        for (int i = 0; i < 3; i++)
+    {
+   game.Projectiles.Add(new Projectile
+        {
+     Pos = new Vector2(100f + i * 20f, 120f + i * 15f),
+            Vel = new Vector2(40f + i, -25f),
+            Element = (Element)i,
+            Damage = 7f + i,
+        });
+        }
+
+        byte[] payload;
+        using (MemoryStream stream = new())
+  {
+            using (BinaryWriter writer = new(stream, System.Text.Encoding.UTF8, leaveOpen: true))
+      NetProtocol.WriteSnapshot(writer, game);
+            payload = stream.ToArray();
+     }
+
+        DuelClient reader = new("ГОСТЬ");
+        using (MemoryStream stream = new(payload, writable: false))
+using (BinaryReader binary = new(stream, System.Text.Encoding.UTF8))
+   reader.ReadSnapshot(binary);
+
+        bool peers = reader.Snapshots.Count == 2;
+        PlayerClass hostClass = PlayerClass.Mage;
+        PlayerClass guestClass = PlayerClass.Mage;
+        if (peers)
+        {
+      foreach (PeerSnapshot s in reader.Snapshots)
+     {
+        if (s.Id == 0) hostClass = CharacterClasses.Clamp(s.PlayerClass);
+       else guestClass = CharacterClasses.Clamp(s.PlayerClass);
+   }
+        }
+
+        bool shots = reader.Projectiles.Count == 3;
+        bool positions = shots
+        && MathF.Abs(reader.Projectiles[2].X - 140f) < 0.01f
+     && MathF.Abs(reader.Projectiles[2].Y - 150f) < 0.01f;
+
+  bool ok = peers && hostClass == PlayerClass.Mage && guestClass == PlayerClass.Archer && shots && positions;
+        Console.WriteLine($"[net] снапшот: игроков={reader.Snapshots.Count} " +
+   $"класс хоста={CharacterClasses.Name(hostClass)} класс гостя={CharacterClasses.Name(guestClass)} " +
+ $"снарядов={reader.Projectiles.Count} -> {(ok ? "ok" : "ОШИБКА")}");
+        if (!ok) throw new InvalidOperationException("snapshot round-trip failed");
+        duel.Dispose();
+    }
+
     public static void NetTest()
     {
         Console.OutputEncoding = System.Text.Encoding.UTF8;
@@ -682,8 +963,10 @@ internal static class DevTools
         return;
     }
 
-    TestRoomDiscovery(duel, host);
-    TestDuelTargeting(duel, host);
+        TestRoomDiscovery(duel, host);
+        TestDuelTargeting(duel, host);
+        TestSnapshotRoundTrip();
+
 
 
         // 1. loopback-подключение
@@ -1273,13 +1556,151 @@ internal static class DevTools
     }
 
     /// <summary>
- /// Темнота и кристаллы. Проверяет то, что легко сломать незаметно:
- /// комнаты должны запоминаться, кристалл не должен включаться сам,
-    /// урон должен обрывать зарядку, а в дуэли темноты быть не должно.
- /// </summary>
+    /// Классы персонажа. Проверяет то, что легко сломать незаметно:
+    /// числа класса должны реально применяться, свет и вид маяка - различаться,
+    /// класс должен переживать сохранение настроек, а дуэль - довозить класс
+    /// соперника по сети.
+    /// </summary>
+    private static void TestClasses()
+    {
+     Console.WriteLine("[class] классы персонажа");
+
+        // Числа класса: маг живучее и экономнее, стрелок быстрее и злее.
+      Game mageGame = NewGame();
+        mageGame.Settings.PlayerClass = PlayerClass.Mage;
+        mageGame.StartRun(991u);
+        Game archerGame = NewGame();
+        archerGame.Settings.PlayerClass = PlayerClass.Archer;
+        archerGame.StartRun(991u);
+
+        Player m = mageGame.Player;
+        Player a = archerGame.Player;
+        bool stats = m.MaxHp == CharacterClasses.MaxHp(PlayerClass.Mage)
+            && a.MaxHp == CharacterClasses.MaxHp(PlayerClass.Archer)
+  && m.DashCooldown > a.DashCooldown
+  && a.CritChance > m.CritChance
+  && m.ManaRegen > a.ManaRegen
+     && a.Hp == a.MaxHp;
+        Console.WriteLine($"[class] числа: маг hp={m.MaxHp} рывок={m.DashCooldown} крит={m.CritChance} " +
+            $"мана={m.ManaRegen} | стрелок hp={a.MaxHp} рывок={a.DashCooldown} " +
+            $"крит={a.CritChance} мана={a.ManaRegen} -> {(stats ? "ok" : "FAIL")}");
+
+  // Свет у классов обязан отличаться: у мага ровная сфера, у стрелка
+        // мерцающий огонь, и точка света смещена в руку.
+        float mageRadius = CharacterClasses.AuraRadius(PlayerClass.Mage);
+        float archerRadius = CharacterClasses.AuraRadius(PlayerClass.Archer);
+        bool lightDiffers = CharacterClasses.AuraFlicker(PlayerClass.Mage) == 0f
+            && CharacterClasses.AuraFlicker(PlayerClass.Archer) > 0f
+        && CharacterClasses.AuraColor(PlayerClass.Mage) != CharacterClasses.AuraColor(PlayerClass.Archer)
+         && mageRadius != archerRadius;
+        Console.WriteLine($"[class] свет: радиус маг={mageRadius} стрелок={archerRadius} " +
+  $"мерцание={CharacterClasses.AuraFlicker(PlayerClass.Archer)} " +
+       $"-> {(lightDiffers ? "ok" : "FAIL")}");
+
+   // Маяки: кристалл у мага, костёр у стрелка.
+        bool beacons = CharacterClasses.Beacon(PlayerClass.Mage) == BeaconKind.Crystal
+      && CharacterClasses.Beacon(PlayerClass.Archer) == BeaconKind.Campfire
+      && CharacterClasses.BeaconColor(PlayerClass.Mage) != CharacterClasses.BeaconColor(PlayerClass.Archer)
+       && CharacterClasses.BeaconFlicker(PlayerClass.Mage) == 0f
+            && CharacterClasses.BeaconFlicker(PlayerClass.Archer) > 0f;
+        Console.WriteLine($"[class] маяки: маг={CharacterClasses.Beacon(PlayerClass.Mage)} " +
+            $"стрелок={CharacterClasses.Beacon(PlayerClass.Archer)} -> {(beacons ? "ok" : "FAIL")}");
+
+   // Бой: оба класса обязаны проигрывать забег без ошибок. Проверяем не
+        // только "не упало", но и что мир реально рисуется - если бы
+  // DrawHeld или спрайты были сломаны, кадр был бы пустым.
+        bool runsOk = true;
+        foreach (PlayerClass cls in new[] { PlayerClass.Mage, PlayerClass.Archer })
+  {
+     Game g = NewGame();
+   g.Settings.GraphicsQuality = 2;
+            g.Settings.PlayerClass = cls;
+            g.StartRun(4242u);
+  g.State = GameState.Playing;
+        int litPixels = 0;
+      for (int f = 0; f < 240; f++)
+       {
+    g.Update(1f / 60f);
+        if (f == 120)
+       {
+        using Bitmap frame = new((int)GameRenderer.Width, (int)GameRenderer.Height, PixelFormat.Format32bppPArgb);
+          using Graphics fg = Graphics.FromImage(frame);
+      g.Renderer.Draw(fg, g);
+       litPixels = CountLitPixels(frame);
+   }
+   }
+     bool drew = litPixels > 200;
+        runsOk &= drew;
+       Console.WriteLine($"[class] забег {CharacterClasses.Name(cls)}: " +
+    $"освещённых пикселей={litPixels} -> {(drew ? "ok" : "ПУСТОЙ КАДР")}");
+    }
+
+        // Смена класса в настройках. Классов два, поэтому переключение
+   // ходит по кругу: маг -> стрелок -> маг -> стрелок.
+        Settings s = NewGame().Settings;
+        s.PlayerClass = PlayerClass.Mage;
+        s.CycleClass(1);
+        PlayerClass step1 = s.PlayerClass;
+      s.CycleClass(1);
+        PlayerClass step2 = s.PlayerClass;
+        s.CycleClass(1);
+        bool cycles = step1 == PlayerClass.Archer && step2 == PlayerClass.Mage
+            && s.PlayerClass == PlayerClass.Archer;
+    Console.WriteLine($"[class] переключение: маг->{CharacterClasses.Name(step1)}->" +
+  $"{CharacterClasses.Name(step2)}->{CharacterClasses.Name(s.PlayerClass)} -> {(cycles ? "ok" : "FAIL")}");
+
+        // Панель выбора не должна перехватывать клики по пунктам меню.
+   float px = Game.ClassPanelX + Game.ClassPanelW * 0.5f;
+        float py = Game.ClassPanelY + Game.ClassPanelH * 0.5f;
+        bool panelHit = Game.ClassPanelHit(px, py) == 3
+       && Game.ClassPanelHit(Game.ClassPanelX + 15f, Game.ClassPanelY + 38f) == 1
+     && Game.ClassPanelHit(Game.ClassPanelX + Game.ClassPanelW - 15f, Game.ClassPanelY + 38f) == 2
+            && Game.ClassPanelHit(Game.ClassPanelX - 5f, py) == 0;
+        Console.WriteLine($"[class] панель: портрет={Game.ClassPanelHit(px, py)} " +
+      $"лево={Game.ClassPanelHit(Game.ClassPanelX + 15f, Game.ClassPanelY + 38f)} " +
+      $"право={Game.ClassPanelHit(Game.ClassPanelX + Game.ClassPanelW - 15f, Game.ClassPanelY + 38f)} " +
+  $"мимо={Game.ClassPanelHit(Game.ClassPanelX - 5f, py)} -> {(panelHit ? "ok" : "FAIL")}");
+
+        // Дуэль: класс должен доехать по сети и дойти до Foe.
+    DuelSession duel = new(mageGame);
+        duel.StartHosting(withBot: true);
+     duel.StartDuelWithBot();
+        bool duelClasses = duel.Game.Player.Class == PlayerClass.Mage
+            && duel.Game.Foe is not null
+  && duel.Game.Foe.Class == duel.BotClass
+                       && duel.Game.Foe.MaxHp == CharacterClasses.MaxHp(duel.BotClass);
+        Console.WriteLine($"[class] дуэль: я={CharacterClasses.Name(duel.Game.Player.Class)} " +
+        $"соперник={CharacterClasses.Name(duel.Game.Foe?.Class ?? PlayerClass.Mage)} " +
+$"hp соперника={duel.Game.Foe?.MaxHp} -> {(duelClasses ? "ok" : "FAIL")}");
+   duel.Dispose();
+
+        bool ok = stats && lightDiffers && beacons && runsOk && cycles && panelHit && duelClasses;
+  Console.WriteLine(ok ? "[class] ok" : "[class] ОШИБКА");
+        if (!ok) throw new InvalidOperationException("class checks failed");
+    }
+
+    /// <summary>Сколько в кадре пикселей не чёрных - грубая проверка, что кадр не пуст.</summary>
+    private static int CountLitPixels(Bitmap frame)
+    {
+        int count = 0;
+        for (int y = 0; y < frame.Height; y += 2)
+        {
+            for (int x = 0; x < frame.Width; x += 2)
+            {
+                if (frame.GetPixel(x, y).R + frame.GetPixel(x, y).G + frame.GetPixel(x, y).B > 90) count++;
+            }
+        }
+        return count;
+    }
+
+    /// <summary>
+    /// Темнота и кристаллы. Проверяет то, что легко сломать незаметно:
+    /// комнаты должны запоминаться, кристалл не должен включаться сам,
+  /// урон должен обрывать зарядку, а в дуэли темноты быть не должно.
+    /// </summary>
     private static void TestDarknessAndCrystals()
     {
-Console.WriteLine("[dark] темнота, кристаллы и свет");
+        Console.WriteLine("[dark] темнота, кристаллы и свет");
 
      Game game = NewGame();
         game.Settings.GraphicsQuality = 2;
@@ -1419,7 +1840,8 @@ Game duel = NewGame();
         TestSoftLock();
         TestSettingsRoundTrip();
         TestMenuExitFlow();
-        TestPauseAndDuelExit();
+             TestPauseAndDuelExit();
+        TestClasses();
         TestDarknessAndCrystals();
         TestRunSimulation();
         Console.WriteLine("=== all checks finished ===");

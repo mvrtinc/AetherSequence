@@ -1,4 +1,4 @@
-﻿using System.Drawing;
+using System.Drawing;
 using AetherSequence.Core;
 using AetherSequence.Entities;
 
@@ -139,25 +139,25 @@ internal static class Sprites
     {
         "....KKKK....",
         "...KhhhhK.GG",
-        "..Khhhhhk.gg",
+    "..Khhhhhk.gg",
         "..KhSSSSKh.T",
         "..KhSEsESKh.T",
         "..KhSSSSKh.T",
         "...KSSSSK..T",
         "..KKrrrrKK.T",
         ".KrrBBrrrK.T",
-        ".KrRbBbrrK.T",
+   ".KrRbBbrrK.T",
         ".KrrrrrrrK.T",
-        "..KKrrrKK..T",
+  "..KKrrrKK..T",
         "...KK.KK...T",
-        "...KK.KK....",
+     "...KK.KK....",
     }, new Dictionary<char, Color>
     {
         ['K'] = GameMath.Rgb(14, 11, 24),
-        ['h'] = GameMath.Rgb(46, 33, 74),
-        ['k'] = GameMath.Rgb(32, 23, 54),
-        ['H'] = GameMath.Rgb(66, 48, 104),
-        ['S'] = GameMath.Rgb(238, 198, 160),
+ ['h'] = GameMath.Rgb(46, 33, 74),
+    ['k'] = GameMath.Rgb(32, 23, 54),
+      ['H'] = GameMath.Rgb(66, 48, 104),
+     ['S'] = GameMath.Rgb(238, 198, 160),
         ['s'] = GameMath.Rgb(214, 170, 134),
         ['E'] = GameMath.Rgb(120, 240, 255),
         ['r'] = GameMath.Rgb(92, 58, 140),
@@ -165,14 +165,127 @@ internal static class Sprites
         ['B'] = GameMath.Rgb(216, 179, 74),
         ['G'] = GameMath.Rgb(140, 240, 255),
         ['g'] = GameMath.Rgb(70, 150, 220),
-        ['T'] = GameMath.Rgb(138, 90, 43),
+ ['T'] = GameMath.Rgb(138, 90, 43),
+    });
+
+    /// <summary>
+    /// Тело мага в рабочем размере 16x20. Прежний спрайт 12x14 был заметно
+    /// меньше остальных спрайтов игры, и персонаж читался как точка.
+    ///
+    /// Посоха в спрайте нет намеренно: он рисуется процедурно, как лук и
+    /// факел стрелка. Когда посох был частью карты, он вылезал из силуэта
+    /// отдельными кусками наконечника.
+ ///
+    /// Символы: K - контур, h/H - капюшон, S - лицо, E - светящиеся глаза,
+ /// r/R - плащ, B - застёжка.
+    /// </summary>
+    public static readonly Sprite MageBody = Sprite.Parse(new[]
+    {
+     ".....KKKKKK.....",
+        "...KKKhhhhhKKK..",
+        "..KhhHHHHHHHhhK.",
+        "..KhSSSSSSSSShK.",
+        "..KhSESSESSEShK.",
+        "..KhSSSSSSSSShK.",
+        "..KhhSSSSSSSShK.",
+        "...KKhhhhhhhKK..",
+   "..KKKrrrrrrKKK..",
+        ".KrrrRrrrrRrrrK.",
+        ".KrrrrRrrrrrrrK.",
+  ".KrrrBBrrBBrrrK.",
+        ".KrrrrrrrrrrrK..",
+  ".KrRrrrrrrrrRrK.",
+        ".KrrrrrrrrrrrK..",
+        "..KKrrrrrrrrKK..",
+        "...KKrrrrrrKK...",
+        "...KKKK..KKKK...",
+        "..KKK....KK.....",
+        "...KK.....KK....",
+    }, new Dictionary<char, Color>
+    {
+        ['K'] = GameMath.Rgb(14, 11, 24),
+        ['h'] = GameMath.Rgb(46, 33, 74),
+        ['k'] = GameMath.Rgb(32, 23, 54),
+   ['H'] = GameMath.Rgb(66, 48, 104),
+        ['S'] = GameMath.Rgb(226, 186, 150),
+        ['s'] = GameMath.Rgb(196, 152, 118),
+     ['E'] = GameMath.Rgb(120, 240, 255),
+        ['r'] = GameMath.Rgb(92, 58, 140),
+        ['R'] = GameMath.Rgb(126, 84, 186),
+        ['B'] = GameMath.Rgb(216, 179, 74),
+    });
+
+    /// <summary>
+    /// Тело стрелка в размере 16x20, по приложенному референсу: капюшон,
+/// плащ, колчан стрел за правым плечом.
+    ///
+    /// Лицо у стрелка закрыто капюшоном: видна узкая полоса кожи и горящие
+    /// глаза в тени. У мага лицо открыто, он смотрит на мир; стрелок из
+    /// капюшона выглядывает. Вместе с более тёплыми тонами и отсутствием
+    /// посоха это даёт два разных силуэта, а не две перекрашенные копии.
+    ///
+    /// В руках ничего нет - лук и факел рисуются процедурно.
+    /// </summary>
+    public static readonly Sprite ArcherBody = Sprite.Parse(new[]
+    {
+        ".....KKKKKKK.AA",
+ "...AKKhhhhhKKAA",
+        "..AKhhHHHHHhkAA",
+   "..AhhhkSSSSskk.",
+        "..AhhkSSESSEsk.",
+        "..AhhkSSSSSSsk.",
+        "..AhhhkSSSSkk..",
+        "...AKhhhhhhhKA.",
+        "..AKKKrrrrKKKA.",
+  ".AKrrrRrrrrRrrKA",
+        ".AKrrrrRrrrrrrKA",
+    ".AKrrrBBrrBBrrKA",
+        ".AKrrrrrrrrrrrKA",
+        ".AKrRrrrrrrrrrKA",
+        ".AKrrrrrrrrrrrKA",
+        "..AKKrrrrrrrrKA",
+        "...AKKrrrrrrKKA",
+ "...AKKK..KKKK..",
+        "..AKK......KKK.",
+     "...KK.......KK..",
+    }, new Dictionary<char, Color>
+    {
+      ['K'] = GameMath.Rgb(16, 12, 20),
+        ['h'] = GameMath.Rgb(58, 44, 52),
+        ['k'] = GameMath.Rgb(38, 29, 38),
+        ['H'] = GameMath.Rgb(84, 64, 70),
+['S'] = GameMath.Rgb(214, 176, 140),
+     ['s'] = GameMath.Rgb(168, 132, 102),
+        ['E'] = GameMath.Rgb(255, 176, 96),
+   ['r'] = GameMath.Rgb(74, 52, 46),
+        ['R'] = GameMath.Rgb(104, 74, 62),
+     ['B'] = GameMath.Rgb(186, 146, 70),
+        ['A'] = GameMath.Rgb(142, 116, 82),
+    });
+
+    /// <summary>Факел стрелка: палка и пляшущее пламя, рисуется поверх тела.</summary>
+    public static readonly Sprite Torch = Sprite.Parse(new[]
+    {
+     "..oo.",
+        ".oyyo",
+   "..oyo.",
+        "..oo.",
+  ".oTTo.",
+    "oTTTTo",
+     ".oTT.",
+        "..o..",
+    }, new Dictionary<char, Color>
+    {
+        ['o'] = GameMath.Rgb(255, 128, 40),
+        ['y'] = GameMath.Rgb(255, 226, 150),
+     ['T'] = GameMath.Rgb(122, 78, 40),
     });
 
     public static readonly Sprite MageCape = Sprite.Parse(new[]
     {
         "...KKKKK..",
         "..KrrrrrK.",
-        ".KrRrrrrK.",
+  ".KrRrrrrK.",
         ".KrrrrrrK.",
         ".KrrRrrrK.",
         "..KrrrrK..",
@@ -180,8 +293,28 @@ internal static class Sprites
     }, new Dictionary<char, Color>
     {
         ['K'] = GameMath.Rgb(14, 11, 24),
-        ['r'] = GameMath.Rgb(70, 40, 108),
+   ['r'] = GameMath.Rgb(70, 40, 108),
         ['R'] = GameMath.Rgb(104, 62, 158),
+    });
+
+    /// <summary>
+    /// Плащ стрелка для контрового света. Короче и плотнее, чем у мага:
+ /// стрелок держится ближе к земле иначе с луком не ходить.
+    /// </summary>
+  public static readonly Sprite ArcherCape = Sprite.Parse(new[]
+    {
+        "..KKKKKK..",
+    ".KrrrrrrK.",
+        ".KrRrrrrK.",
+        ".KrrrrrrK.",
+        ".KrRrrrK..",
+        "..KrrrrK..",
+        "...KKKK...",
+    }, new Dictionary<char, Color>
+    {
+        ['K'] = GameMath.Rgb(16, 12, 20),
+        ['r'] = GameMath.Rgb(60, 42, 38),
+        ['R'] = GameMath.Rgb(92, 64, 54),
     });
 
     public static readonly Sprite Slime = Sprite.Parse(new[]
@@ -351,9 +484,58 @@ internal static class Sprites
    ['c'] = GameMath.Rgb(96, 176, 244),
         ['f'] = GameMath.Rgb(150, 220, 255),
         ['W'] = GameMath.Rgb(226, 246, 255),
-        ['P'] = GameMath.Rgb(30, 34, 62),
+    ['P'] = GameMath.Rgb(30, 34, 62),
         ['a'] = GameMath.Rgb(58, 108, 190),
         ['d'] = GameMath.Rgb(20, 24, 48),
+    });
+
+    /// <summary>
+    /// Костёр: каменная круговерша, поленья и угли. Заменяет кристалл у
+    /// стрелка. Свет у него тёплый и живой, поэтому при рисовании
+    /// добавляется мерцание - спрайт сам по себе статичен.
+    ///
+    /// Пламя нарисовано тремя слоями: белое ядро, оранжевая середина и
+    /// тёмно-красные края. Боковые языки пламени разной длины - костёр
+    /// должен выглядеть живым даже на неподвижном кадре.
+    /// </summary>
+    public static readonly Sprite SpriteCampfire = Sprite.Parse(new[]
+    {
+     "..........WwW...........",
+        ".........WFFW...........",
+        "........WfFFf....f......",
+        ".......WfFFfFf..ff......",
+        "......WfwwFfFffff.......",
+      ".....WfwwFfFffFwf.......",
+        ".....WfwwwWfFwwf........",
+        "....WfwwwwwWfwwf........",
+      "...WfwwwwwWWWffwf.......",
+    "....WfwwwwwwWWwfwf.......",
+        ".....KKKKwwWWKKKK.......",
+        "...KKKKKKKKWKKKKKKK....",
+        "..sPPPPssKKWKKssPPPPs...",
+   "..sPPPPPPPPPPPPPPPPPPs...",
+        "..sPPPqPPPPPPPPPPPqPPPs..",
+        "...sPqqqPPPPPPPPPqqqPs...",
+        "...sPqqqPPPPPPPPPqqqPs...",
+        "....sPPqqPPPPPPPqqPPs....",
+        ".....sPPPqqPPPPPqqPPPs...",
+     ".....sPPPPPPPPPPPPPPPs...",
+        "......sPPPPPPPPPPPPs....",
+        ".......sPPPPPPPPPPs.....",
+        "........sPPPPPPPPs......",
+        ".........sPPPPPPs.......",
+        "...........sPPPs........",
+        "............sss.........",
+    }, new Dictionary<char, Color>
+    {
+        ['K'] = GameMath.Rgb(14, 11, 20),
+        ['W'] = GameMath.Rgb(255, 232, 168),
+        ['F'] = GameMath.Rgb(255, 158, 46),
+        ['f'] = GameMath.Rgb(204, 84, 26),
+        ['w'] = GameMath.Rgb(238, 118, 34),
+        ['s'] = GameMath.Rgb(52, 49, 66),
+        ['P'] = GameMath.Rgb(84, 81, 102),
+        ['q'] = GameMath.Rgb(112, 108, 132),
     });
 
     /// <summary>Страж Эфира: заострённые наплечники, парящие обломки, кристалл-глаз.</summary>

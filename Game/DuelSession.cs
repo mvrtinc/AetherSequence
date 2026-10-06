@@ -67,6 +67,15 @@ internal sealed class DuelSession : IDisposable
     public string HostNick = string.Empty;
     public string GuestNick = string.Empty;
 
+    /// <summary>Класс, которым играет локальный игрок. Задаётся из настроек.</summary>
+    public PlayerClass MyClass = PlayerClass.Mage;
+
+    /// <summary>Класс соперника: у хоста - с его пира, у гостя - из присланного списка.</summary>
+    public PlayerClass OpponentClass = PlayerClass.Mage;
+
+    /// <summary>Класс бота в тренировке. Рандомизируется при старте матча.</summary>
+    public PlayerClass BotClass = PlayerClass.Archer;
+
     public readonly List<RoomListing> VisibleRooms = new();
     public int RoomRow;
     public float DiscoverTimer;
@@ -114,6 +123,7 @@ internal sealed class DuelSession : IDisposable
         Rune = (byte)GameMath.ClampI(p.SelectedRune, 0, 5),
         HitFlash = p.HitFlash,
         Flow = GameMath.ClampI((int)(p.Flow * 10f), 0, 10),
+        PlayerClass = (byte)CharacterClasses.Clamp((int)p.Class),
     };
 
     private float _snapAccum;
@@ -275,29 +285,34 @@ internal sealed class DuelSession : IDisposable
 
     public void StartHosting(bool withBot = false, float botSkill = 0.7f)
     {
-        Leave();
-        Host = new DuelHost(RoomName, Nick);
-        Discovery = null;
+    Leave();
+    MyClass = _game.Settings.PlayerClass;
+        Host = new DuelHost(RoomName, Nick) { HostClass = (int)MyClass };
+    Discovery = null;
         HostNick = Nick;
         GuestNick = string.Empty;
         LocalId = 0;
         RoundNumber = 1;
         WinsHost = 0;
-        WinsGuest = 0;
+ WinsGuest = 0;
         MatchWinner = -1;
 
-        // Бот живёт в слоте гостя: отдельный компьютер не нужен.
+        // Бот живёт в слоте гостя: отдельный компьютер не нужен. Класс бота
+        // случайный: заодно это единственный способ посмотреть на оба
+  // класса в дуэли без второй машины.
         if (withBot)
-        {
+  {
             Bot = new Net.DuelBot(0x51Du, "БОТ", botSkill);
-            Host.AddBot(Bot.Nick);
-            GuestNick = Bot.Nick;
-        }
+       BotClass = CharacterClasses.Next(MyClass, 1);
+    Host.AddBot(Bot.Nick, (int)BotClass);
+      GuestNick = Bot.Nick;
+            OpponentClass = BotClass;
+      }
 
         Phase = DuelPhase.InRoom;
         SetStatus(withBot
             ? $"тренировка с ботом «{Bot!.Nick}» - жмите СТАРТ"
-            : $"комната «{RoomName}» открыта, ждём соперника");
+          : $"комната «{RoomName}» открыта, ждём соперника");
     }
 
     /// <summary>Бот-соперник, если игра идёт против него.</summary>
@@ -305,8 +320,9 @@ internal sealed class DuelSession : IDisposable
 
     public void StartBrowsing()
     {
-        Leave();
-        Client = new DuelClient(Nick);
+ Leave();
+   MyClass = _game.Settings.PlayerClass;
+        Client = new DuelClient(Nick) { PlayerClass = (byte)MyClass };
         Client.Rejected += reason =>
         {
             Phase = DuelPhase.Browsing;
@@ -315,12 +331,18 @@ internal sealed class DuelSession : IDisposable
         Client.StartRequested += () =>
         {
             LocalId = Client.LocalId;
-            foreach ((byte id, string nick, bool isHost) in Client.Peers)
-            {
-                if (isHost) HostNick = nick;
-                else GuestNick = nick;
-            }
-            BeginMatch();
+       for (int i = 0; i < Client.Peers.Count && i < Client.PeerClasses.Count; i++)
+      {
+                (byte id, string nick, bool isHost) = Client.Peers[i];
+   PlayerClass cls = CharacterClasses.Clamp(Client.PeerClasses[i]);
+        if (isHost)
+       {
+             HostNick = nick;
+        OpponentClass = cls;
+       }
+        else GuestNick = nick;
+      }
+ BeginMatch();
         };
         Client.RoundFinished += () =>
         {
@@ -663,11 +685,16 @@ internal sealed class DuelSession : IDisposable
             }
         }
 
-        if (Host is not null && guestId >= 0)
+    if (Host is not null && guestId >= 0)
         {
-            foreach (DuelPeer peer in Host.Peers)
-            {
-                if (peer.Id == guestId) GuestNick = peer.Nick;
+        foreach (DuelPeer peer in Host.Peers)
+      {
+   if (peer.Id != guestId) continue;
+    GuestNick = peer.Nick;
+
+        // Класс гостя приехал ещё в Hello, поэтому он известен с момента
+       // подключения, а не с первого снапшота.
+        OpponentClass = CharacterClasses.Clamp(peer.PlayerClass);
             }
         }
 
@@ -708,11 +735,17 @@ internal sealed class DuelSession : IDisposable
     private void UpdateLoading(Input input)
     {
         if (Client is null || Client.Peers.Count == 0) return;
-        LocalId = Client.LocalId;
-        foreach ((byte id, string nick, bool isHost) in Client.Peers)
+    LocalId = Client.LocalId;
+        for (int i = 0; i < Client.Peers.Count && i < Client.PeerClasses.Count; i++)
         {
-            if (isHost) HostNick = nick;
-            else GuestNick = nick;
+     (byte id, string nick, bool isHost) = Client.Peers[i];
+      PlayerClass cls = CharacterClasses.Clamp(Client.PeerClasses[i]);
+            if (isHost)
+            {
+                HostNick = nick;
+         OpponentClass = cls;
+  }
+     else GuestNick = nick;
         }
         BeginMatch();
     }

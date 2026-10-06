@@ -1,5 +1,6 @@
 ﻿using System.Text.Json;
 using System.Windows.Forms;
+using AetherSequence.Entities;
 
 namespace AetherSequence.Core;
 
@@ -57,12 +58,33 @@ internal sealed class SettingsData
     public int WindowW { get; set; } = 1280;
     public int WindowH { get; set; } = 720;
     public int WindowX { get; set; } = -1;
-    public int WindowY { get; set; } = -1;
+  public int WindowY { get; set; } = -1;
     public bool Fullscreen { get; set; }
-    public int BestDepth { get; set; }
-    public int BestScore { get; set; }
-    public int BestKills { get; set; }
+
+    /// <summary>Выбранный класс персонажа: 0 - маг, 1 - стрелок.</summary>
+    public int PlayerClass { get; set; }
+
+    // Рекорды хранятся по каждому классу отдельно. Раньше числа были
+    // одиночными, и прогресс мага со стрелком смешивался в одну цифру,
+    // из-за чего сравнивать было нечего. Старые значения при первом
+    // запуске переезжают в ячейку мага.
+    public List<int> ClassBestDepth { get; set; } = new();
+    public List<int> ClassBestScore { get; set; } = new();
+    public List<int> ClassBestKills { get; set; } = new();
+    public List<int> ClassRuns { get; set; } = new();
+
+    /// <summary>Всего забегов за все времена: сумма по классам.</summary>
     public int RunsCompleted { get; set; }
+
+    // Старые одиночные рекорды. Читаются только для переноса в ClassBest*,
+    // но продолжают попадать в файл: если пользователь вернётся к сборке
+    // без классов, его прогресс на месте.
+    public int BestDepth { get; set; }
+
+    public int BestScore { get; set; }
+
+    public int BestKills { get; set; }
+
     public List<BindingDto> Bindings { get; set; } = new();
 }
 
@@ -83,30 +105,66 @@ internal sealed class Settings
     {
         _data = data;
         _path = path;
+        MigrateRecords();
         ApplyDefaults();
         LoadFromData();
     }
 
+    /// <summary>
+    /// Перенос старых рекордов в ячейки классов. До появления классов
+    /// глубина, очки и убийства хранились одним числом на файл, и
+    /// при первом запуске новой версии эти значения не должны пропасть.
+    /// Всё, что было заработано до классов, засчитываем магу.
+    /// </summary>
+    private void MigrateRecords()
+    {
+    // Списки пустые только у файлов, записанных старой версией.
+        if (_data.ClassBestDepth.Count == 0
+ && _data.ClassBestScore.Count == 0
+    && _data.ClassBestKills.Count == 0)
+        {
+    if (_data.BestDepth > 0 || _data.BestScore > 0 || _data.BestKills > 0)
+            {
+                _data.ClassBestDepth.Add(_data.BestDepth);
+         _data.ClassBestScore.Add(_data.BestScore);
+  _data.ClassBestKills.Add(_data.BestKills);
+            }
+
+      // RunsCompleted переносим в ячейку мага, но само поле остаётся
+    // общей суммой, чтобы старые счётчики не задваивались при записи.
+      if (_data.ClassRuns.Count == 0) _data.ClassRuns.Add(0);
+        }
+    }
+
     public static string FilePath { get; private set; } = string.Empty;
+
+    /// <summary>
+    /// Загрузить настройки из конкретного файла. Нужно тесту миграции:
+    /// подсовывать файл, записанный прошлой версией игры, удобнее напрямую,
+    /// а не подменяя содержимое settings.json рядом с exe.
+    /// </summary>
+    public static Settings LoadFromFile(string path)
+    {
+        FilePath = path;
+        SettingsData? data = null;
+        try
+     {
+            if (File.Exists(path))
+   {
+        data = JsonSerializer.Deserialize<SettingsData>(File.ReadAllText(path), JsonOptions);
+       }
+   }
+        catch
+  {
+  data = null;
+        }
+        return new Settings(data ?? new SettingsData(), path);
+    }
 
     public static Settings Load(string? directory = null)
     {
         string dir = directory ?? AppContext.BaseDirectory;
-        string path = Path.Combine(dir, "settings.json");
-        FilePath = path;
-        SettingsData? data = null;
-        try
-        {
-            if (File.Exists(path))
-            {
-                data = JsonSerializer.Deserialize<SettingsData>(File.ReadAllText(path), JsonOptions);
-            }
-        }
-        catch
-        {
-            data = null;
-        }
-        return new Settings(data ?? new SettingsData(), path);
+        return LoadFromFile(Path.Combine(dir, "settings.json"));
     }
 
     public void Save()
@@ -242,32 +300,103 @@ internal sealed class Settings
         set => _data.SfxVolume = GameMath.ClampI(value, 0, 100);
     }
 
-    /// <summary>Самая глубокая достигнутая глубина за все забеги.</summary>
-    public int BestDepth
+    /// <summary>Выбранный класс персонажа. Читается при старте забега и дуэли.</summary>
+    public PlayerClass PlayerClass
     {
-        get => _data.BestDepth;
-        set => _data.BestDepth = Math.Max(0, value);
+      get => CharacterClasses.Clamp(_data.PlayerClass);
+        set => _data.PlayerClass = (int)CharacterClasses.Clamp((int)value);
     }
 
-    /// <summary>Лучший результат по очкам.</summary>
-    public int BestScore
+    /// <summary>
+    /// Перейти к следующему классу по кругу. Вызывается из главного меню
+    /// и из настроек, поэтому живёт здесь, а не в отрисовке.
+    /// </summary>
+    public PlayerClass CycleClass(int direction)
     {
-        get => _data.BestScore;
-        set => _data.BestScore = Math.Max(0, value);
+        PlayerClass next = CharacterClasses.Next(PlayerClass, direction);
+        _data.PlayerClass = (int)next;
+        return next;
     }
 
-    /// <summary>Больше всего убийств за один забег.</summary>
-    public int BestKills
+    /// <summary>
+    /// Рекорды по классу. Списки могут быть короче числа классов, если
+ /// settings.json писала старая версия игры - недостающие ячейки
+    /// читаются как ноль, а при первой записи дописываются.
+    /// </summary>
+    private static int GetAt(List<int> list, int index)
+        => index >= 0 && index < list.Count ? Math.Max(0, list[index]) : 0;
+
+    private static void SetAt(List<int> list, int index, int value)
     {
-        get => _data.BestKills;
-        set => _data.BestKills = Math.Max(0, value);
+        while (list.Count <= index) list.Add(0);
+        list[index] = Math.Max(0, value);
     }
+
+    public int BestDepthOf(PlayerClass c) => GetAt(_data.ClassBestDepth, (int)c);
+
+    public int BestScoreOf(PlayerClass c) => GetAt(_data.ClassBestScore, (int)c);
+
+    public int BestKillsOf(PlayerClass c) => GetAt(_data.ClassBestKills, (int)c);
+
+    public int RunsOf(PlayerClass c) => GetAt(_data.ClassRuns, (int)c);
+
+    public void SetBestDepth(PlayerClass c, int value) => SetAt(_data.ClassBestDepth, (int)c, value);
+
+    public void SetBestScore(PlayerClass c, int value) => SetAt(_data.ClassBestScore, (int)c, value);
+
+    public void SetBestKills(PlayerClass c, int value) => SetAt(_data.ClassBestKills, (int)c, value);
+
+    public void CountRun(PlayerClass c)
+    {
+        SetAt(_data.ClassRuns, (int)c, RunsOf(c) + 1);
+        _data.RunsCompleted = RunsCompleted + 1;
+    }
+
+    /// <summary>Лучший результат по всем классам - для сводки в меню.</summary>
+    public int BestDepthAnywhere
+    {
+        get
+        {
+            int best = 0;
+            for (int i = 0; i < CharacterClasses.Count; i++)
+                best = Math.Max(best, BestDepthOf((PlayerClass)i));
+            return best;
+        }
+    }
+
+    public int BestScoreAnywhere
+    {
+        get
+     {
+            int best = 0;
+            for (int i = 0; i < CharacterClasses.Count; i++)
+                best = Math.Max(best, BestScoreOf((PlayerClass)i));
+         return best;
+    }
+    }
+
+    /// <summary>Лучший результат по глубине выбранного класса.</summary>
+    public int BestDepth => BestDepthOf(PlayerClass);
+
+    /// <summary>Лучший результат по очкам выбранного класса.</summary>
+    public int BestScore => BestScoreOf(PlayerClass);
+
+    /// <summary>Больше всего убийств за один забег выбранного класса.</summary>
+    public int BestKills => BestKillsOf(PlayerClass);
 
     /// <summary>Сколько забегов доведено до финала (победа или смерть).</summary>
-    public int RunsCompleted
+    public int RunsCompleted => _data.RunsCompleted;
+
+    /// <summary>
+    /// Служебные сеттеры рекордов для тестов: пишут в ячейку класса, минуя
+/// игровой путь. Нужны, чтобы проверить миграцию старого settings.json и
+    /// раздельность рекордов без реального прохождения забега.
+    /// </summary>
+    public void TestSetLegacyRecords(int depth, int score, int kills)
     {
-        get => _data.RunsCompleted;
-        set => _data.RunsCompleted = Math.Max(0, value);
+        _data.BestDepth = depth;
+        _data.BestScore = score;
+        _data.BestKills = kills;
     }
 
     public int WindowW
@@ -354,6 +483,10 @@ internal sealed class Settings
         fresh.WindowX = _data.WindowX;
         fresh.WindowY = _data.WindowY;
         fresh.Fullscreen = _data.Fullscreen;
+        // Класс - не настройка внешнего вида, а часть того, кто играет.
+        // Сброс "всех настроек" не должен менять выбранного героя, как не
+        // меняет он и положение окна.
+        fresh.PlayerClass = _data.PlayerClass;
         _data.ComboWindow = fresh.ComboWindow;
         _data.AutoAimDegrees = fresh.AutoAimDegrees;
         _data.MouseAutoFire = fresh.MouseAutoFire;

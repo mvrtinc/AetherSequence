@@ -80,10 +80,17 @@ internal sealed class DuelHost : IDisposable
             }
         }
 
-        lock (_gate)
-        {
+    lock (_gate)
+   {
             _peers.Clear();
-            _peers.Add(new DuelPeer { Id = 0, Nick = HostNick, IsLocal = true, IsHost = true });
+            _peers.Add(new DuelPeer
+        {
+         Id = 0,
+            Nick = HostNick,
+         IsLocal = true,
+ IsHost = true,
+      PlayerClass = (byte)Math.Clamp(HostClass, 0, CharacterClasses.Count - 1),
+        });
         }
 
         _discovery = new LanDiscovery(HostNick, Port);
@@ -95,15 +102,29 @@ internal sealed class DuelHost : IDisposable
     /// <summary>Занят ли порт обнаружения - иначе поиск комнат работать не будет.</summary>
     public bool DiscoveryListening => _discovery?.Listening ?? false;
 
+    /// <summary>
+    /// Класс хоста. Задаётся до Start: он попадает в Welcome, чтобы гость
+    /// видел класс соперника уже в комнате ожидания, а не с первого снапшота.
+    /// </summary>
+    public int HostClass;
+
     /// <summary>Добавить бота в слот гостя, чтобы играть без второго компьютера.</summary>
-    public void AddBot(string nick)
+  public void AddBot(string nick, int botClass = 1)
     {
         lock (_gate)
-        {
-            _peers.RemoveAll(p => !p.IsLocal);
-            _peers.Add(new DuelPeer { Id = 1, Nick = nick, IsLocal = false, IsHost = false, IsBot = true });
-        }
-        PlayerJoined?.Invoke(1, nick);
+    {
+    _peers.RemoveAll(p => !p.IsLocal);
+         _peers.Add(new DuelPeer
+      {
+                Id = 1,
+       Nick = nick,
+  IsLocal = false,
+             IsHost = false,
+        IsBot = true,
+  PlayerClass = (byte)Math.Clamp(botClass, 0, CharacterClasses.Count - 1),
+     });
+      }
+   PlayerJoined?.Invoke(1, nick);
     }
 
     /// <summary>Подставить ввод бота вместо сетевого пакета гостя.</summary>
@@ -170,13 +191,19 @@ internal sealed class DuelHost : IDisposable
                         using (MemoryStream stream = new(body, writable: false))
                         using (BinaryReader reader = new(stream, Encoding.UTF8))
                         {
-                            int version = reader.ReadInt32();
-                            string nick = NetProtocol.ReadString(reader, NetProtocol.MaxNickLength);
-                            if (version != NetProtocol.Version)
-                            {
-                                channelRef?.Send(MsgKind.Reject, w => NetProtocol.WriteString(w, "версия игры не совпадает", 64));
-                                return;
-                            }
+    int version = reader.ReadInt32();
+        string nick = NetProtocol.ReadString(reader, NetProtocol.MaxNickLength);
+
+      // Класс гостя читаем сразу, но проверяем версию раньше, чем начнём
+                // доверять этому байту: иначе несовпадающий формат даст
+            // мусор, который уедет в DuelPeer и в Welcome дальше.
+              if (version != NetProtocol.Version)
+   {
+channelRef?.Send(MsgKind.Reject, w => NetProtocol.WriteString(w, "версия игры не совпадает", 64));
+                    return;
+    }
+
+        byte guestClass = (byte)CharacterClasses.Clamp(reader.ReadByte());
                             lock (_gate)
                             {
                                 if (_peers.Count(p => p.Connected) >= DuelRules.MaxPlayers)
@@ -184,13 +211,14 @@ internal sealed class DuelHost : IDisposable
                                     channelRef?.Send(MsgKind.Reject, w => NetProtocol.WriteString(w, "комната заполнена", 64));
                                     return;
                                 }
-                                pending = new DuelPeer
-                                {
-                                    Id = (byte)_peers.Count,
-                                    Nick = nick,
-                                    IsLocal = false,
-                                    LastSeen = Environment.TickCount64,
-                                };
+  pending = new DuelPeer
+            {
+              Id = (byte)_peers.Count,
+      Nick = nick,
+           IsLocal = false,
+           PlayerClass = guestClass,
+    LastSeen = Environment.TickCount64,
+     };
                                 _peers.Add(pending);
                                 if (channelRef is not null) _channels[pending.Id] = channelRef;
                             }
@@ -201,12 +229,13 @@ internal sealed class DuelHost : IDisposable
                                 w.Write(pending.Id);
                                 w.Write(NetProtocol.Version);
                                 w.Write((byte)roster.Count);
-                                foreach (DuelPeer peer in roster)
-                                {
-                                    w.Write(peer.Id);
-                                    NetProtocol.WriteString(w, peer.Nick, NetProtocol.MaxNickLength);
-                                    w.Write(peer.IsHost);
-                                }
+       foreach (DuelPeer peer in roster)
+            {
+           w.Write(peer.Id);
+      NetProtocol.WriteString(w, peer.Nick, NetProtocol.MaxNickLength);
+         w.Write(peer.IsHost);
+         w.Write(peer.PlayerClass);
+         }
                             });
                             PlayerJoined?.Invoke(pending.Id, nick);
                         }

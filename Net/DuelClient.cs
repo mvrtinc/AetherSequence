@@ -24,6 +24,17 @@ internal sealed class DuelClient : IDisposable
 
     public readonly List<(byte Id, string Nick, bool IsHost)> Peers = new();
 
+    /// <summary>
+    /// Классы пиров из Welcome, по индексу совпадают с Peers. Отдельный
+ /// список, а не поле в кортеже: кортеж разбирается в трёх местах
+    /// (DuelSession, DevTools), и менять его ради одного числа дороже,
+ /// чем держать список рядом.
+    /// </summary>
+    public readonly List<byte> PeerClasses = new();
+
+    /// <summary>Класс, которым играет этот клиент. Уходит в Hello.</summary>
+    public byte PlayerClass;
+
     public readonly List<PeerSnapshot> Snapshots = new();
     public readonly List<ProjectileSnapshot> Projectiles = new();
     public readonly List<byte> Effects = new();
@@ -71,9 +82,13 @@ internal sealed class DuelClient : IDisposable
             _channel = new NetChannel(tcp, OnMessage);
             _channel.Send(MsgKind.Hello, w =>
             {
-                w.Write(NetProtocol.Version);
-                NetProtocol.WriteString(w, Nick, NetProtocol.MaxNickLength);
-            });
+          w.Write(NetProtocol.Version);
+    NetProtocol.WriteString(w, Nick, NetProtocol.MaxNickLength);
+
+   // Класс идёт сразу после ника: хост обязан знать его до старта матча,
+       // иначе он создаст соперника как мага.
+          w.Write(PlayerClass);
+   });
             Connected = true;
             Status = string.Empty;
             return true;
@@ -102,15 +117,18 @@ internal sealed class DuelClient : IDisposable
                     LocalId = reader.ReadByte();
                     int version = reader.ReadInt32();
                     if (version != NetProtocol.Version) throw new InvalidDataException("version");
-                    Peers.Clear();
-                    int count = reader.ReadByte();
-                    for (int i = 0; i < count; i++)
-                    {
-                        byte id = reader.ReadByte();
-                        string nick = NetProtocol.ReadString(reader, NetProtocol.MaxNickLength);
-                        bool isHost = reader.ReadBoolean();
-                        Peers.Add((id, nick, isHost));
-                    }
+      Peers.Clear();
+            PeerClasses.Clear();
+         int count = reader.ReadByte();
+          for (int i = 0; i < count; i++)
+{
+    byte id = reader.ReadByte();
+          string nick = NetProtocol.ReadString(reader, NetProtocol.MaxNickLength);
+          bool isHost = reader.ReadBoolean();
+     byte cls = reader.ReadByte();
+  Peers.Add((id, nick, isHost));
+      PeerClasses.Add(cls);
+      }
                     PeerListChanged?.Invoke();
                     break;
 
@@ -162,7 +180,14 @@ internal sealed class DuelClient : IDisposable
         }
     }
 
-    private void ReadSnapshot(BinaryReader reader)
+    /// <summary>
+    /// Разбор снапшота. Метод internal, а не private: --nettest раньше
+    /// вообще не вызывал его, потому что пробный клиент уничтожался до
+    /// старта матча. Из-за этого изменение формата снапшота проходило
+    /// незамеченным, и рассинхрон WritePeer/ReadSnapshot был бы найден
+ /// только двумя людьми на двух компьютерах.
+    /// </summary>
+    internal void ReadSnapshot(BinaryReader reader)
     {
         Snapshots.Clear();
         int tick = reader.ReadInt32();
@@ -182,8 +207,9 @@ internal sealed class DuelClient : IDisposable
                 Dashing = reader.ReadBoolean(),
                 Rune = reader.ReadByte(),
                 HitFlash = reader.ReadSingle(),
-                Flow = reader.ReadByte(),
-            };
+   Flow = reader.ReadByte(),
+      PlayerClass = reader.ReadByte(),
+        };
             Snapshots.Add(snapshot);
         }
 

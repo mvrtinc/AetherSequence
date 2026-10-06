@@ -107,8 +107,12 @@ g.CompositingMode = CompositingMode.SourceOver;
         if (foe is null || !foe.Alive) return;
 
         bool localIsHost = duel.LocalId == 0;
-        string label = localIsHost ? "СОПЕРНИК" : "ХОСТ";
-        Color tint = localIsHost ? Palette.Health : Palette.Flow;
+
+        // Класс соперника в подписи: иначе в дуэли нельзя понять, кто перед
+        // тобой - маг со скипетром или стрелок с факелом, - не считая
+        // оружия в двух пикселях.
+        string label = $"{CharacterClasses.Name(foe.Class)} · {(localIsHost ? "СОПЕРНИК" : "ХОСТ")}";
+  Color tint = localIsHost ? Palette.Health : Palette.Flow;
 
         Vector2 screen = foe.Pos - game.Camera.Position - game.Camera.Offset;
         Text.DrawCentered(g, label, Text.Tiny, Palette.Fade(tint, 0.85f), screen.X, screen.Y - 14f);
@@ -186,14 +190,15 @@ GraphicsState state = g.Save();
         game.Level.DrawExit(g, game.Time, game.Level.ExitOpen);
       game.Effects.Draw(g, game.Time);
 
-           // Кристаллы стоят на полу и тоже прячутся в темноте: неактивный
-     // кристалл видно только там, куда дотягивается ореол героя.
+        // Маяки стоят на полу и тоже прячутся в темноте: незажжённый костёр
+        // или кристалл видно только там, куда дотягивается свет героя.
+        BeaconKind beaconKind = CharacterClasses.Beacon(game.Player.Class);
         for (int i = 0; i < game.Crystals.Count; i++)
         {
   Crystal c = game.Crystals[i];
-            bool canCharge = game.ChargeActive || c.Activated;
-            if (!IsLitFor(c.Pos, cam) && !canCharge) continue;
-            c.Draw(g, game.Time, !c.Activated && Vector2.Distance(game.Player.Pos, c.Pos) < Crystal.Reach);
+    bool canCharge = game.ChargeActive || c.Activated;
+     if (!IsLitFor(c.Pos, cam) && !canCharge) continue;
+     c.Draw(g, game.Time, !c.Activated && Vector2.Distance(game.Player.Pos, c.Pos) < Crystal.Reach, beaconKind);
         }
 
 foreach (Pickup p in game.Pickups)
@@ -315,24 +320,42 @@ CollectLights(game, _mask, cam);
     {
         Player p = game.Player;
 
-if (p.Alive)
+        if (p.Alive)
         {
-   // От героя идёт только ореол вокруг персонажа - фонарика нет.
-       // Раньше свет шёл конусом по направлению прицела, и это читалось
-       // как отдельный источник, а не как присутствие самого мага.
-            Color aura = GameMath.Mix(Palette.Health, Elements.Color(p.LastElement), 0.35f);
+    // Свет класса: у мага ровная эфирная сфера из посоха, у стрелка -
+     // живой огонь из факела в руке. Оба без направленного луча.
+        bool archer = p.Class == PlayerClass.Archer;
+            Color aura = GameMath.Mix(
+      CharacterClasses.AuraColor(p.Class),
+    Elements.Color(p.LastElement),
+    CharacterClasses.AuraElementMix(p.Class));
 
-        // Основной ореол. Во время зарядки кристалла он сжимается:
- // игрок в этот момент не должен хорошо видеть.
-// Радиус подобран так, чтобы освещённая площадь сравнялась с бывшим
-      // конусом: ореол должен уходить дальше по бокам, раз конуса больше нет.
-  float radius = game.ChargeActive ? 34f : 58f;
-            float intensity = game.ChargeActive ? 0.72f : 1.1f;
-            mask.Add(LightSource.Circle(p.Pos, radius, aura, intensity, 0.85f));
+     // Во время зарядки маяка свет сжимается: игрок в этот момент
+       // не должен хорошо видеть.
+   float radius = game.ChargeActive ? CharacterClasses.ChargingRadius(p.Class) : CharacterClasses.AuraRadius(p.Class);
+    float intensity = game.ChargeActive ? 0.72f : 1.1f;
 
-     // Второй, более плотный слой у самых ног: отделяет фигуру от пола.
-     mask.Add(LightSource.Circle(p.Pos, 24f, aura, intensity * 0.85f, 0.7f));
-        }
+     // Мерцание факела. Три частоты не совпадают между собой, иначе
+       // свет пульсировал бы в такт дыханию персонажа и выглядел
+            // искусственно. У мага мерцания нет вовсе - кристалл стабилен.
+     float flick = CharacterClasses.AuraFlicker(p.Class);
+  if (flick > 0f)
+    {
+     float wobble = 1f + flick * (MathF.Sin(game.Time * 9.1f) * 0.6f + MathF.Sin(game.Time * 14.7f + 1.3f) * 0.4f);
+        radius *= wobble;
+            intensity *= wobble;
+ }
+
+        // Источник света у стрелка - сама рука с факелом, а не центр тела:
+      // иначе ореол стоял бы вплотную к персонажу и не читался как огонь в руке.
+   Vector2 origin = archer ? p.TorchPoint() : p.Pos;
+            mask.Add(LightSource.Circle(origin, radius, aura, intensity, 0.85f));
+
+       // Второй, более плотный слой у самых ног: отделяет фигуру от пола.
+            // Он всегда от игрока, даже когда основной свет у стрелка смещён
+   // в сторону руки - иначе ноги тонули бы в темноте.
+mask.Add(LightSource.Circle(p.Pos, archer ? 26f : 24f, aura, intensity * 0.85f, 0.7f));
+    }
 
     // Снаряды свет и огонь дают малый ореол - иначе в темноте не видно,
      // куда летят собственные огненные шары.
@@ -354,27 +377,41 @@ if (p.Alive)
      mask.Add(LightSource.Circle(exit + cam, 52f, game.Level.Colors.ExitOpen, 0.75f, 0.7f));
         }
 
-// Активированные кристаллы светят постоянно и освещают комнату.
-     // Цвет берётся из темы, чтобы кристалл был частью пещеры, а не
-        // белым пятном поверх неё, и подмешивается с кристаллом для
-   // насыщенности: серый неон в тёмной комнате выглядит вялым.
+     // Зажжённые маяки светят постоянно и освещают комнату. У мага это
+        // кристаллы, у стрелка - костры, но механика одна и та же: та же
+        // сущность, тот же радиус, тот же вызов RouseRoom.
+        BeaconKind beacon = CharacterClasses.Beacon(game.Player.Class);
+        Color beaconBase = CharacterClasses.BeaconColor(game.Player.Class);
+        float beaconFlicker = CharacterClasses.BeaconFlicker(game.Player.Class);
+
         for (int i = 0; i < game.Crystals.Count; i++)
         {
-Crystal c = game.Crystals[i];
-     if (!c.Activated) continue;
+     Crystal c = game.Crystals[i];
+    if (!c.Activated) continue;
 
-            Vector2 cp = c.Pos - cam;
-            Color hot = GameMath.Mix(game.Level.Colors.Neon, Palette.ExitOpen, 0.45f);
+     Vector2 cp = c.Pos - cam;
+   Color hot = beacon == BeaconKind.Campfire
+        ? beaconBase
+   : GameMath.Mix(game.Level.Colors.Neon, beaconBase, 0.45f);
 
-            // Ядро: маленькое, но плотное - это и есть сам кристалл.
-            mask.Add(LightSource.Circle(cp + cam, 34f, hot, 1.5f, 0.55f));
+    float breathe = 1f;
+    if (beaconFlicker > 0f)
+    {
+                // Костёр дышит: две частоты плюс собственная волна маяка,
+    // чтобы соседние костры не пульсировали в унисон.
+       breathe = 1f + beaconFlicker * (MathF.Sin(game.Time * 8.3f + c.Wave) * 0.55f
+           + MathF.Sin(game.Time * 13.1f + c.Wave * 1.7f) * 0.45f);
+       }
 
-  // Основное пятно заполняет комнату.
-            mask.Add(LightSource.Circle(cp + cam, Crystal.LightRadius, hot, 1.25f, 0.8f));
+   // Ядро: маленькое, но плотное - это и есть сам маяк.
+      mask.Add(LightSource.Circle(cp + cam, 34f * breathe, hot, 1.5f, 0.55f));
 
-    // Мягкий подсвет по краю, чтобы комната не кончалась кругом.
-   mask.Add(LightSource.Circle(cp + cam, Crystal.LightRadius * 1.5f, hot, 0.5f, 0.95f));
-        }
+// Основное пятно заполняет комнату.
+  mask.Add(LightSource.Circle(cp + cam, Crystal.LightRadius * breathe, hot, 1.25f * breathe, 0.8f));
+
+            // Мягкий подсвет по краю, чтобы комната не кончалась кругом.
+ mask.Add(LightSource.Circle(cp + cam, Crystal.LightRadius * 1.5f * breathe, hot, 0.5f, 0.95f));
+   }
     }
 
 /// <summary>
@@ -1054,17 +1091,20 @@ private void DrawDuelHud(Graphics g, Game game)
             Text.DrawCentered(g, Elements.Glyph(element), Text.Small, Palette.Fade(c, a + 0.35f), left, y - 6f);
         }
 
-        Text.DrawCentered(g, "AETHER SEQUENCE", Text.Title, Palette.Fade(Palette.Paper, 0.97f), Width * 0.5f, 26f);
-        Text.DrawCentered(g, "ЭФИРНЫЙ ЗАБЕГ МАГА", Text.Small, Palette.Fade(Palette.Muted, 0.95f), Width * 0.5f, 96f);
+        PlayerClass cls = game.Settings.PlayerClass;
+
+    Text.DrawCentered(g, "AETHER SEQUENCE", Text.Title, Palette.Fade(Palette.Paper, 0.97f), Width * 0.5f, 26f);
+        Text.DrawCentered(g, $"ЭФИРНЫЙ ЗАБЕГ {CharacterClasses.Name(cls)}А", Text.Small, Palette.Fade(Palette.Muted, 0.95f), Width * 0.5f, 96f);
 
         const float panelX = 70f;
         const float panelW = Width - 140f;
-        Palette.Fill(g, Palette.Fade(Palette.Panel, 0.75f), panelX, 128f, panelW, 96f);
+    Palette.Fill(g, Palette.Fade(Palette.Panel, 0.75f), panelX, 128f, panelW, 96f);
         Palette.Stroke(g, Palette.Fade(Palette.PanelEdge, 0.8f), panelX, 128f, panelW, 96f);
         Text.DrawCentered(g, "WASD - ХОДЬБА      МЫШЬ - ПРИЦЕЛ      ЛКМ - КАСТ", Text.Tiny, Palette.Paper, Width * 0.5f, 138f);
         Text.DrawCentered(g, "ПКМ - РЫВОК      КОЛЕСО - СМЕНА РУНЫ      1-6 - РУНЫ СТИХИЙ", Text.Tiny, Palette.Paper, Width * 0.5f, 154f);
-    Text.DrawCentered(g, "F (держать) - ЗАЖЕЧЬ КРИСТАЛЛ ОСВЕЩЕНИЯ", Text.Tiny, Palette.Fade(Palette.ExitOpen, 0.9f), Width * 0.5f, 170f);
-        Text.DrawCentered(g, "Смешивайте стихии подряд - сработает РЕЗОНАНС", Text.Tiny, Palette.Fade(Palette.Flow, 0.95f), Width * 0.5f, 176f);
+        Text.DrawCentered(g, $"F (держать) - ЗАЖЕЧЬ {CharacterClasses.BeaconName(cls)}", Text.Tiny,
+ Palette.Fade(CharacterClasses.BeaconColor(cls), 0.9f), Width * 0.5f, 170f);
+ Text.DrawCentered(g, "Смешивайте стихии подряд - сработает РЕЗОНАНС", Text.Tiny, Palette.Fade(Palette.Flow, 0.95f), Width * 0.5f, 176f);
         Text.DrawCentered(g, "15 глубин. Смерть - это начало.", Text.Tiny, Palette.Muted, Width * 0.5f, 198f);
 
         if (game.State == GameState.Duel)
@@ -1077,9 +1117,9 @@ private void DrawDuelHud(Graphics g, Game game)
 
         for (int i = 0; i < TitleMenu.Count; i++)
         {
-            float y = Game.TitleItemY(i);
-            bool selected = game.TitleRow == i;
-            bool danger = (TitleMenu.Row)i == TitleMenu.Row.Quit;
+ float y = Game.TitleItemY(i);
+     bool selected = game.TitleRow == i;
+       bool danger = (TitleMenu.Row)i == TitleMenu.Row.Quit;
             if (selected)
             {
                 float w = Text.Width(g, TitleMenu.Labels[i], Text.SmallBold) + 28f;
@@ -1090,21 +1130,129 @@ private void DrawDuelHud(Graphics g, Game game)
             Text.DrawCentered(g, TitleMenu.Labels[i], selected ? Text.SmallBold : Text.Small, color, Width * 0.5f, y);
         }
 
-        DrawBestRecord(g, game);
+        DrawClassPanel(g, game, cls);
+        DrawBestRecord(g, game, cls);
 
         Text.DrawCentered(g, "UP/DOWN - ВЫБОР      ENTER - ПОДТВЕРДИТЬ", Text.Tiny, Palette.Fade(Palette.Muted, 0.85f), Width * 0.5f, 350f);
         Palette.DrawVignette(g, 0f, 0f, Width, Height, 0.9f);
     }
 
-    /// <summary>Строка рекордов под меню (скрыта, пока рекордов нет).</summary>
-    private static void DrawBestRecord(Graphics g, Game game)
+    /// <summary>
+    /// Панель выбора класса: портрет, стрелки, имя и точки внизу. Портрет
+ /// крупнее игрового спрайта - в меню есть место показать класс так, чтобы
+    /// он читался сразу, а не по пикселям втрое увеличенного тела.
+    /// </summary>
+    private static void DrawClassPanel(Graphics g, Game game, PlayerClass cls)
+    {
+        const float x = Game.ClassPanelX;
+        const float y = Game.ClassPanelY;
+     const float w = Game.ClassPanelW;
+        const float h = Game.ClassPanelH;
+
+  Palette.Fill(g, Palette.Fade(Palette.Panel, 0.9f), x, y, w, h);
+        Palette.Stroke(g, Palette.Fade(Palette.PanelEdge, 0.9f), x, y, w, h);
+
+        // Углыки панели - тот же приём, что у рамок интерфейса в дуэли.
+        Color edge = Palette.Fade(Palette.PanelEdge, 0.9f);
+        Palette.Fill(g, edge, x - 2f, y - 2f, 5f, 1f);
+        Palette.Fill(g, edge, x - 2f, y - 2f, 1f, 5f);
+        Palette.Fill(g, edge, x + w - 3f, y - 2f, 5f, 1f);
+        Palette.Fill(g, edge, x + w + 2f, y - 2f, 1f, 5f);
+        Palette.Fill(g, edge, x - 2f, y + h + 1f, 5f, 1f);
+        Palette.Fill(g, edge, x - 2f, y + h - 3f, 1f, 5f);
+        Palette.Fill(g, edge, x + w - 3f, y + h + 1f, 5f, 1f);
+        Palette.Fill(g, edge, x + w + 2f, y + h - 3f, 1f, 5f);
+
+        Color tint = CharacterClasses.AuraColor(cls);
+
+        // Портрет: тело класса втрое крупнее игрового спрайта, плюс оружие
+     // тем же кодом, что и в бою. Без оружия маг и стрелок выглядели бы
+   // одинаково - различие и есть в том, что в руках.
+        float cx = x + w * 0.5f;
+        const float scale = 3f;
+        float px = cx - 8f * scale;
+        float py = y + 9f;
+
+        Palette.Fill(g, Palette.Fade(Palette.Void, 0.9f), cx - 30f, y + 6f, 60f, 66f);
+        Palette.Stroke(g, Palette.Fade(Palette.PanelEdge, 0.5f), cx - 30f, y + 6f, 60f, 66f);
+
+  // Свет вокруг портрета - тот же ореол, что в бою, только схематично.
+        Palette.AddGlow(g, new Vector2(cx, py + 12f * scale), 30f, tint, 0.32f);
+
+        // Оружие под телом, ровно как в бою.
+        Player.DrawHeld(g, new Vector2(cx, py + 10f * scale), Vector2.UnitX, 0f, cls, false,
+      game.Time, CharacterClasses.AuraColor(cls));
+
+   CharacterClasses.Body(cls).Draw(g, px, py, false, scale, 0f);
+
+        float arrowY = y + 38f;
+        DrawPanelArrow(g, x + 15f, arrowY, false, game.Time, CharacterClasses.Count > 1);
+        DrawPanelArrow(g, x + w - 15f, arrowY, true, game.Time, CharacterClasses.Count > 1);
+
+        Text.DrawCentered(g, CharacterClasses.Name(cls), Text.SmallBold, Palette.Fade(Palette.Paper, 0.95f), cx, y + 74f);
+        Text.DrawCentered(g, CharacterClasses.Summary(cls), Text.Tiny, Palette.Fade(tint, 0.85f), cx, y + 87f);
+
+        // Точки: по одной на класс. Пока классов два, точек две.
+        for (int i = 0; i < CharacterClasses.Count; i++)
+        {
+bool active = i == (int)cls;
+  float dx = cx + (i - (CharacterClasses.Count - 1) * 0.5f) * 9f;
+            float dy = y + h - 6f;
+   if (active) Palette.AddGlow(g, new Vector2(dx, dy + 1f), 5f, tint, 0.8f);
+   Palette.Fill(g, active ? Palette.Fade(tint, 0.95f) : Palette.Fade(Palette.Muted, 0.55f),
+ dx - 1.5f, dy - 1.5f, 3f, 3f);
+        }
+    }
+
+    /// <summary>Стрелка переключения класса. Дышит, пока есть куда переключаться.</summary>
+    private static void DrawPanelArrow(Graphics g, float cx, float cy, bool right, float time, bool enabled)
+    {
+   if (!enabled) return;
+
+        float pulse = 0.6f + 0.4f * MathF.Sin(time * 3.2f);
+        Color c = Palette.Fade(Palette.Paper, 0.5f + 0.35f * pulse);
+
+   if (right)
+        {
+   Palette.Fill(g, c, cx - 1f, cy - 5f, 2f, 11f);
+            Palette.Fill(g, c, cx - 4f, cy - 3f, 2f, 7f);
+            Palette.Fill(g, c, cx - 7f, cy - 1f, 2f, 3f);
+        }
+        else
+        {
+   Palette.Fill(g, c, cx + 1f, cy - 5f, 2f, 11f);
+Palette.Fill(g, c, cx + 4f, cy - 3f, 2f, 7f);
+            Palette.Fill(g, c, cx + 7f, cy - 1f, 2f, 3f);
+        }
+    }
+
+    /// <summary>
+    /// Рекорды под меню. Показываются по каждому классу отдельно: одна
+    /// сводная строка смешала бы прогресс мага и стрелка в неразличимое
+    /// число.
+    /// </summary>
+    private static void DrawBestRecord(Graphics g, Game game, PlayerClass selected)
     {
         Settings s = game.Settings;
-        if (s.BestDepth <= 0 && s.BestScore <= 0) return;
+        bool any = s.BestDepthAnywhere > 0 || s.BestScoreAnywhere > 0;
+        if (!any) return;
 
-        string line = s.BestDepth > 0 ? $"РЕКОРД · ГЛУБИНА {s.BestDepth}" : "РЕКОРД";
-        if (s.BestScore > 0) line += $" · {s.BestScore} ОЧКОВ";
-        Text.DrawCentered(g, line, Text.Tiny, Palette.Fade(Palette.Gold, 0.8f), Width * 0.5f, 234f);
+        float y = 231f;
+        for (int i = 0; i < CharacterClasses.Count; i++)
+        {
+            PlayerClass c = (PlayerClass)i;
+     int depth = s.BestDepthOf(c);
+        int score = s.BestScoreOf(c);
+if (depth <= 0 && score <= 0) continue;
+
+            string line = $"ГЛУБИНА {depth}";
+if (score > 0) line += $" · {score} ОЧКОВ";
+
+            bool isSel = c == selected;
+            Color col = Palette.Fade(isSel ? Palette.Gold : Palette.Muted, isSel ? 0.9f : 0.55f);
+       Text.DrawCentered(g, $"{CharacterClasses.Name(c)} · {line}", Text.Tiny, col, Width * 0.5f, y);
+ y += 9f;
+        }
     }
 
     private void DrawDuelMenu(Graphics g, Game game)
@@ -1234,8 +1382,13 @@ private void DrawDuelHud(Graphics g, Game game)
         Text.DrawCentered(g, ready ? "СОПЕРНИК ПОДКЛЮЧЁН" : "ОЖИДАНИЕ СОПЕРНИКА...",
             Text.Tiny, ready ? Palette.Fade(Palette.ExitOpen, 0.95f) : Palette.Muted, Width * 0.5f, y + 18f);
 
-        Text.DrawCentered(g, duel.HostNick + (ready ? "   vs   " + duel.GuestNick : "   (вы)"),
-            Text.Tiny, Palette.Paper, Width * 0.5f, y + 32f);
+             // Классы показываем уже в комнате ожидания: соперник получает их в
+        // Hello и в Welcome, то есть до старта матча.
+        string hostTag = $"{CharacterClasses.Name(duel.MyClass)} {duel.HostNick}";
+        string vs = ready
+            ? $"   vs   {CharacterClasses.Name(duel.OpponentClass)} {duel.GuestNick}"
+   : "   (вы)";
+        Text.DrawCentered(g, hostTag + vs, Text.Tiny, Palette.Paper, Width * 0.5f, y + 32f);
 
         // Пока гость не пришёл, показываем адрес хоста: если поиск комнат
         // не работает, гость подключится по нему вручную.

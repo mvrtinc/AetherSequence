@@ -49,20 +49,21 @@ internal static class SettingsMenu
 {
     public enum Row
     {
+        Class,
         ComboWindow,
         AutoAim,
         AutoFire,
         AutoInterval,
-        AimMode,
+   AimMode,
         QuickCast,
-        OwnCrosshair,
+  OwnCrosshair,
         ShowLock,
         LockCursor,
-        UiScale,
-        ScaleMode,
-        ShowFps,
+   UiScale,
+      ScaleMode,
+      ShowFps,
         NativeUi,
-     Minimap,
+        Minimap,
         Graphics,
         MasterVolume,
         MusicVolume,
@@ -74,27 +75,28 @@ internal static class SettingsMenu
 
     public static readonly string[] Labels =
     {
+     "КЛАСС ПЕРСОНАЖА",
         "ОКНО КОМБО",
-        "АВТОНАВЕДЕНИЕ",
+   "АВТОНАВЕДЕНИЕ",
         "АВТООГОНЬ ЛКМ",
-        "ИНТЕРВАЛ ОГНЯ",
+      "ИНТЕРВАЛ ОГНЯ",
         "РЕЖИМ ПРИЦЕЛА",
-        "ПОВТОР ЗАКЛИНАНИЯ",
+    "ПОВТОР ЗАКЛИНАНИЯ",
         "СВОЙ ПРИЦЕЛ",
         "МЕТКА ЦЕЛИ",
         "КУРСОР В ОКНЕ",
         "РАЗМЕР ИНТЕРФЕЙСА",
         "МАСШТАБ ОКНА",
-        "ПОКАЗАТЬ FPS",
+    "ПОКАЗАТЬ FPS",
         "ИНТЕРФЕЙС 1920x1080",
-"МИНИКАРТА",
+        "МИНИКАРТА",
         "КАЧЕСТВО ГРАФИКИ",
-"ОБЩАЯ ГРОМКОСТЬ",
+        "ОБЩАЯ ГРОМКОСТЬ",
         "ГРОМКОСТЬ МУЗЫКИ",
         "ГРОМКОСТЬ ЗВУКОВ",
         "КЛАВИШИ И МЫШЬ...",
-        "СБРОСИТЬ ВСЁ",
-        "НАЗАД",
+    "СБРОСИТЬ ВСЁ",
+    "НАЗАД",
     };
 
     public static readonly (InputAction Action, string Label)[] BindingRows =
@@ -126,7 +128,8 @@ internal static class SettingsMenu
 
     public static string Value(Settings settings, Row row) => row switch
     {
-        Row.ComboWindow => $"{settings.ComboWindow * 1000f:0} мс",
+ Row.Class => CharacterClasses.Name(settings.PlayerClass),
+    Row.ComboWindow => $"{settings.ComboWindow * 1000f:0} мс",
         Row.AutoAim => settings.AutoAimDegrees <= 0f ? "ВЫКЛ" : $"{settings.AutoAimDegrees:0}°",
         Row.AutoFire => settings.MouseAutoFire ? "ВКЛ" : "ВЫКЛ",
         Row.AutoInterval => $"{settings.AutoCastInterval * 1000f:0} мс",
@@ -204,16 +207,19 @@ internal sealed class Game
     public event Action? RequestQuit;
 
     /// <summary>
-    /// Обновить рекорды, если текущий забег их превзошёл.
-    /// Пишет на диск только при реальном улучшении.
+    /// Обновить рекорды, если текущий забег их превзошёл. Пишется в ячейку
+    /// того класса, которым играли: прогресс мага и стрелка не смешивается.
+ /// Пишет на диск только при реальном улучшении.
     /// </summary>
     public void RecordBest(bool countRun = false)
     {
         bool changed = false;
-        if (Depth > Settings.BestDepth) { Settings.BestDepth = Depth; changed = true; }
-        if (Score > Settings.BestScore) { Settings.BestScore = Score; changed = true; }
-        if (Kills > Settings.BestKills) { Settings.BestKills = Kills; changed = true; }
-        if (countRun) { Settings.RunsCompleted++; changed = true; }
+        PlayerClass cls = Player?.Class ?? Settings.PlayerClass;
+
+        if (Depth > Settings.BestDepthOf(cls)) { Settings.SetBestDepth(cls, Depth); changed = true; }
+        if (Score > Settings.BestScoreOf(cls)) { Settings.SetBestScore(cls, Score); changed = true; }
+        if (Kills > Settings.BestKillsOf(cls)) { Settings.SetBestKills(cls, Kills); changed = true; }
+        if (countRun) { Settings.CountRun(cls); changed = true; }
         if (changed) Settings.Save();
     }
 
@@ -367,7 +373,8 @@ public readonly List<Pickup> Pickups = new();
     {
         Seed = seed == 0u ? Rng.FromTime().NextUInt() : seed;
         Rng = new Rng(Seed);
-        Player = new Player();
+        Player = new Player { Class = Settings.PlayerClass };
+        Player.ApplyClass();
         Caster = Player;
         Depth = 1;
         Kills = 0;
@@ -398,8 +405,12 @@ public readonly List<Pickup> Pickups = new();
         Pickups.Clear();
         Effects.Clear();
 
-        Player = new Player();
-        Foe = new Player();
+        // Классы приходят из сессии: у хоста он свой, у гостя - присланный по сети.
+        // Без них соперник выглядел бы как маг, пока оба не поменяют класс вручную.
+        Player = new Player { Class = session.MyClass };
+        Foe = new Player { Class = session.OpponentClass };
+        Player.ApplyClass();
+        Foe.ApplyClass();
         CurrentHostPlayer = Player;
 
         Player.Teleport(Level.Spawn);
@@ -641,7 +652,7 @@ StopCharge(previous);
       {
         float a = Rng.Range(0f, GameMath.Tau);
     Vector2 around = target.Pos + GameMath.FromAngle(a) * 22f;
-  Effects.Burst(around, Palette.ExitOpen, 1, 40f + k * 60f, 1.5f + k, 0.3f, true);
+  Effects.Burst(around, CharacterClasses.BeaconColor(Player.Class), 1, 40f + k * 60f, 1.5f + k, 0.3f, true);
     }
 
      if (target.Charge >= Crystal.ChargeSeconds) ActivateCrystal(target);
@@ -680,17 +691,24 @@ StopCharge(previous);
       Charging = null;
 
         // Комната открывается на карте целиком: силуэт и враги внутри
-      // становятся видны сразу, без захода в темноту.
+        // становятся видны сразу, без захода в темноту.
         Level.RevealRoom(c.RoomIndex);
 
-        Effects.Ring(c.Pos, 90f, Palette.ExitOpen, 0.9f, 4f, true);
-        Effects.Ring(c.Pos, 54f, Color.White, 0.6f, 2f);
-     Effects.Burst(c.Pos, Palette.ExitOpen, 34, 180f, 3f, 0.7f);
-        Flash(Palette.ExitOpen, 0.3f);
-        Camera.Add(5f);
-        AudioSystem.Play(Sfx.Portal, 0.6f);
+        // Эффект зажигания берёт цвет маяка: у стрелка костёр полыхает
+        // янтарным, а не холодным кристалльным. Иначе вспышка выдавала бы
+        // класс, который только что исчез с экрана.
+        Color hot = CharacterClasses.BeaconColor(Player.Class);
 
-        Banner = "КОМНАТА ОСВЕЩЕНА";
+  Effects.Ring(c.Pos, 90f, hot, 0.9f, 4f, true);
+        Effects.Ring(c.Pos, 54f, Color.White, 0.6f, 2f);
+        Effects.Burst(c.Pos, hot, 34, 180f, 3f, 0.7f);
+        Flash(hot, 0.3f);
+        Camera.Add(5f);
+    AudioSystem.Play(Sfx.Portal, 0.6f);
+
+        Banner = CharacterClasses.Beacon(Player.Class) == BeaconKind.Campfire
+       ? "КОСТЁР ЗАЖЖЁН"
+            : "КОМНАТА ОСВЕЩЕНА";
         BannerTimer = 2f;
 
         // Свет привлекает врагов: из тёмных комнат начинают подтягиваться.
@@ -987,20 +1005,32 @@ added++;
     private void ApplyPeerStates()
     {
         if (Duel is null) return;
-        foreach (PeerSnapshot snapshot in Duel.RenderPlayers)
+  foreach (PeerSnapshot snapshot in Duel.RenderPlayers)
         {
             // Свой снапшот игнорируем: локального игрока гость считает сам.
-            if (snapshot.Id == Duel.LocalId) continue;
-            if (Foe is null) continue;
-            Foe.Pos = new Vector2(snapshot.X, snapshot.Y);
+     if (snapshot.Id == Duel.LocalId) continue;
+      if (Foe is null) continue;
+    Foe.Pos = new Vector2(snapshot.X, snapshot.Y);
             Foe.Hp = snapshot.Hp;
-            Foe.MaxHp = snapshot.MaxHp;
+    Foe.MaxHp = snapshot.MaxHp;
             Foe.Mana = snapshot.Mana;
-            Foe.AimAngle = snapshot.Aim;
-            Foe.Alive = snapshot.Alive;
-            Foe.Dashing = snapshot.Dashing;
+      Foe.AimAngle = snapshot.Aim;
+        Foe.Alive = snapshot.Alive;
+Foe.Dashing = snapshot.Dashing;
             Foe.HitFlash = snapshot.HitFlash;
-        }
+
+      // Класс соперника обязан применяться здесь. Раньше руна уходила по
+      // сети 30 раз в секунду и молча терялась именно здесь: поле летело,
+    // но никто его не читал. С классом вышло бы так же - соперник
+            // весь матч выглядел бы как маг.
+            PlayerClass cls = CharacterClasses.Clamp(snapshot.PlayerClass);
+            if (Foe.Class != cls)
+         {
+                Foe.Class = cls;
+         Foe.ApplyClass();
+                Duel.OpponentClass = cls;
+      }
+   }
 
 Camera.Follow(Player.Pos, ViewSize, Level.PixelSize, 1f / 60f);
     }
@@ -1028,12 +1058,16 @@ Camera.Follow(Player.Pos, ViewSize, Level.PixelSize, 1f / 60f);
             AudioSystem.Play(Sfx.UiMove, 0.3f);
         }
 
+        // Смена класса идёт независимо от пунктов меню: если клик попал
+        // в панель, он не должен ещё и подтверждать пункт.
+     UpdateClassSelection();
+
         bool activate = Input.RawPressed(Keys.Enter) || Input.Pressed(InputAction.Confirm);
         if (!activate && Input.Clicked)
-        {
-            int hovered = TitleRowAt(Input.Mouse);
+   {
+      int hovered = TitleRowAt(Input.Mouse);
             if (hovered >= 0) TitleRow = hovered;
-            activate = true;
+activate = true;
         }
 
         if (AutoStartDuelBot)
@@ -1089,16 +1123,90 @@ Camera.Follow(Player.Pos, ViewSize, Level.PixelSize, 1f / 60f);
         Duel.UpdateInput(Input);
     }
 
-    /// <summary>Индекс пункта титульного меню под мышью (или -1).</summary>
+    /// <summary>
+    /// Индекс пункта титульного меню под мышью (или -1).
+    ///
+    /// Раньше здесь проверялся только Y, а панель выбора класса занимает
+    /// диапазон, накрывающий строки меню. Из-за этого клик по портрету
+    /// запускал забег. Теперь у каждой строки есть своя ширина, и панель
+    /// класса отдельно исключается из зоны кликов.
+    /// </summary>
     private int TitleRowAt(PointF mouse)
     {
-        float y = mouse.Y >= 224f && mouse.Y <= 242f ? -1 : mouse.Y;
+        if (mouse.Y >= 224f && mouse.Y <= 242f) return -1;
+
+        // Панель выбора класса: клик по ней меняет класс, а не пункт меню.
+        if (ClassPanelContains(mouse.X, mouse.Y)) return -1;
+
         for (int i = 0; i < TitleMenu.Count; i++)
         {
             float itemY = TitleItemY(i);
-            if (y >= itemY - 4f && y <= itemY + 16f) return i;
+        if (mouse.Y < itemY - 4f || mouse.Y > itemY + 16f) continue;
+
+        // Пункты меню центрированы и не длиннее самой широкой строки.
+            float half = TitleItemHalfWidth(i) * 0.5f + 8f;
+      float mid = GameRenderer.Width * 0.5f;
+if (mouse.X >= mid - half && mouse.X <= mid + half) return i;
         }
         return -1;
+    }
+
+    /// <summary>Полуширина строки меню вместе с отступами подсветки.</summary>
+    private float TitleItemHalfWidth(int index)
+    {
+        using Bitmap probe = new(1, 1);
+        using Graphics pg = Graphics.FromImage(probe);
+        return Text.Width(pg, TitleMenu.Labels[index], Text.SmallBold) + 28f;
+    }
+
+    /// <summary>Границы панели выбора класса. Портрет, стрелки и точки.</summary>
+    internal const float ClassPanelX = 428f;
+    internal const float ClassPanelY = 225f;
+    internal const float ClassPanelW = 147f;
+    internal const float ClassPanelH = 104f;
+
+    private static bool ClassPanelContains(float x, float y)
+        => x >= ClassPanelX && x <= ClassPanelX + ClassPanelW
+  && y >= ClassPanelY && y <= ClassPanelY + ClassPanelH;
+
+    /// <summary>
+    /// Какая часть панели под мышью: 1 - стрелка влево, 2 - вправо,
+    /// 3 - сам портрет, 0 - мимо панели. Ноль и три различать обязательно:
+    /// по портрету класс листается вперёд, мимо панели - ничего не происходит.
+    /// </summary>
+    internal static int ClassPanelHit(float x, float y)
+    {
+        if (!ClassPanelContains(x, y)) return 0;
+        float mid = ClassPanelX + ClassPanelW * 0.5f;
+        if (x < ClassPanelX + 30f && MathF.Abs(y - (ClassPanelY + 38f)) <= 14f) return 1;
+        if (x > mid + 20f && MathF.Abs(y - (ClassPanelY + 38f)) <= 14f) return 2;
+        return 3;
+    }
+
+    /// <summary>
+    /// Смена класса на титульном экране. Клавиши стихий не трогаем: на
+    /// главном меню они ещё могут попасть в буфер заклинаний, и счётчики
+    /// на смене класса съезжали бы.
+    /// </summary>
+    private void UpdateClassSelection()
+    {
+        int dir = 0;
+        if (Input.RawPressed(Keys.Left) || Input.RawPressed(Keys.PageUp)) dir = -1;
+        if (Input.RawPressed(Keys.Right) || Input.RawPressed(Keys.PageDown)) dir = 1;
+
+        if (Input.Clicked)
+    {
+            int hit = ClassPanelHit(Input.Mouse.X, Input.Mouse.Y);
+     if (hit == 1) dir = -1;
+  else if (hit == 2) dir = 1;
+   else if (hit == 3) dir = 1;
+     }
+
+        if (dir == 0) return;
+
+        Settings.PlayerClass = Settings.CycleClass(dir);
+   Settings.Save();
+        AudioSystem.Play(Sfx.UiMove, 0.4f);
     }
 
     internal static float TitleItemY(int index) => 250f + index * 24f;
@@ -1297,8 +1405,12 @@ Camera.Follow(Player.Pos, ViewSize, Level.PixelSize, 1f / 60f);
     {
         switch (row)
         {
-            case SettingsMenu.Row.ComboWindow:
-                Settings.ComboWindow += direction * 0.02f;
+        case SettingsMenu.Row.Class:
+    // Класс меняется и здесь: не обязательно возвращаться в главное меню.
+    Settings.PlayerClass = Settings.CycleClass(direction);
+  break;
+      case SettingsMenu.Row.ComboWindow:
+       Settings.ComboWindow += direction * 0.02f;
                 break;
             case SettingsMenu.Row.AutoAim:
                 Settings.AutoAimDegrees = direction < 0

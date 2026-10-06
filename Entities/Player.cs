@@ -68,6 +68,9 @@ internal sealed class Player
     public Element LastElement;
     public Color ElementTint = Color.White;
 
+    /// <summary>Класс персонажа. Меняет вид, свет и числа, но не набор заклинаний.</summary>
+    public PlayerClass Class = PlayerClass.Mage;
+
     public readonly bool[] RuneUnlocked = { true, true, true, false, true, false };
 
     public readonly SpellBuffer Buffer = new();
@@ -85,6 +88,15 @@ internal sealed class Player
     public bool LastCastWasFusion { get; private set; }
 
     public Element SelectedElement => Runes.Order[SelectedRune];
+
+    /// <summary>
+    /// Применить числа выбранного класса. Вызывается при старте забега и при
+    /// входе в дуэль, чтобы класс не пришлось выбирать вручную каждый раз.
+    /// </summary>
+    public void ApplyClass()
+    {
+        CharacterClasses.Apply(this);
+    }
 
     public void CycleRune(int direction)
     {
@@ -421,67 +433,198 @@ internal sealed class Player
         }
     }
 
-public void Draw(Graphics g, float time)
-       {
-           float bob = MathF.Sin(AnimTime * 3.4f) * 0.8f;
-           float w = Sprites.Mage.Width;
-           float h = Sprites.Mage.Height;
-           float drawX = Pos.X - w * 0.5f;
-           float drawY = Pos.Y - h + 5f + bob;
-           bool flip = AimAngle > MathF.PI * 0.5f || AimAngle < -MathF.PI * 0.5f;
+    public void Draw(Graphics g, float time)
+  {
+        Sprite body = CharacterClasses.Body(Class);
+        Sprite cape = CharacterClasses.Cape(Class);
 
-           // Тень под ногами: персонаж стоит на поверхности, а не висит в кадре.
-    Palette.Disc(g, Palette.Fade(Color.Black, 0.42f), Pos.X, Pos.Y + 6f, 5.5f);
+        // Ходьба задаёт фазу шага: поле WalkPhase и раньше считалось, но
+        // в отрисовку не попадало. Теперь по нему качается корпус и плащ.
+    float speedNow = Vel.Length();
+        bool walking = speedNow > 8f;
+        float step = MathF.Sin(WalkPhase * 2f);
+        float bob = walking
+        ? MathF.Abs(step) * 1.2f - 0.6f
+    : MathF.Sin(AnimTime * 3.4f) * 0.8f;
 
-      bool flash = HitFlash > 0.05f;
+        float w = body.Width;
+        float h = body.Height;
+   float drawX = Pos.X - w * 0.5f;
+        float drawY = Pos.Y - h + 5f + bob;
+bool flip = AimAngle > MathF.PI * 0.5f || AimAngle < -MathF.PI * 0.5f;
 
-           // След при быстром движении: несколько ослабленных силуэтов
-           // позади. Пара пикселей остаточного следа даёт ощущение скорости.
-        float speed = Vel.Length();
-   if (speed > 90f)
-   {
-  float trail = GameMath.Clamp01((speed - 90f) / 260f) * 0.3f;
- Color tint = GameMath.Mix(Elements.Color(LastElement), Color.White, 0.35f);
-        Vector2 back = GameMath.Normalized(Vel) * 3.4f;
-        Sprites.Mage.DrawSilhouette(g, drawX - back.X, drawY - back.Y, tint, trail, flip, 1f);
-      Sprites.Mage.DrawSilhouette(g, drawX - back.X * 2f, drawY - back.Y * 2f, tint, trail * 0.5f, flip, 1f);
-     }
+        // Тень под ногами: персонаж стоит на поверхности, а не висит в кадре.
+  Palette.Disc(g, Palette.Fade(Color.Black, 0.42f), Pos.X, Pos.Y + 6f, 6f);
+
+        bool flash = HitFlash > 0.05f;
+
+   // След при быстром движении: несколько ослабленных силуэтов
+        // позади. Пара пикселей остаточного следа даёт ощущение скорости.
+        float speed = speedNow;
+        if (speed > 90f)
+     {
+        float trail = GameMath.Clamp01((speed - 90f) / 260f) * 0.3f;
+  Color tint = GameMath.Mix(Elements.Color(LastElement), Color.White, 0.35f);
+  Vector2 back = GameMath.Normalized(Vel) * 3.4f;
+     body.DrawSilhouette(g, drawX - back.X, drawY - back.Y, tint, trail, flip, 1f);
+body.DrawSilhouette(g, drawX - back.X * 2f, drawY - back.Y * 2f, tint, trail * 0.5f, flip, 1f);
+    }
 
     if (Dashing)
-    {
-        Sprites.Mage.DrawSilhouette(g, drawX - DashDir.X * 3f, drawY, GameMath.Mix(Elements.Color(LastElement), Color.White, 0.4f), 0.28f, flip, 1f);
-      Sprites.Mage.DrawSilhouette(g, drawX - DashDir.X * 6f, drawY, GameMath.Mix(Elements.Color(LastElement), Color.White, 0.4f), 0.16f, flip, 1f);
-   }
-
-  if (flash)
-  {
-     Sprites.Mage.DrawSilhouette(g, drawX, drawY, Color.White, HitFlash, flip, 1f);
-   }
-   else
-  {
-       Sprites.Mage.Draw(g, drawX, drawY, flip, 1f);
-       }
-
-    // Контур: спрайт рисуется чуть крупнее тёмным силуэтом под собой.
-    // Один пиксель контура отделяет персонажа от любого фона.
-    Sprites.Mage.DrawSilhouette(g, drawX, drawY, GameMath.Rgb(6, 5, 12), 0.85f, flip, 1f);
-  Sprites.Mage.Draw(g, drawX, drawY, flip, 1f);
-
-       if (CastFlash > 0.02f)
- {
-     Palette.AddGlow(g, Pos + GameMath.FromAngle(AimAngle) * 6f, 9f * CastFlash, ElementTint, CastFlash * 0.8f);
+        {
+    body.DrawSilhouette(g, drawX - DashDir.X * 3f, drawY, GameMath.Mix(Elements.Color(LastElement), Color.White, 0.4f), 0.28f, flip, 1f);
+      body.DrawSilhouette(g, drawX - DashDir.X * 6f, drawY, GameMath.Mix(Elements.Color(LastElement), Color.White, 0.4f), 0.16f, flip, 1f);
         }
 
-     if (Invuln > 0f && !Dashing && (int)(time * 22f) % 2 == 0)
+        Vector2 pivot = new(Pos.X, drawY + h * 0.5f);
+        Vector2 aim = GameMath.FromAngle(AimAngle);
+        float pull = CastFlash > 0.02f ? GameMath.Clamp01(1f - MathF.Abs(CastFlash - 0.5f) * 2f) : 0f;
+
+        // Факел и посох уходят за силуэт, лук - на его поверхность: лук
+        // держат вытянутой рукой, и если спрятать его за спиной, от класса
+        // в бою остаётся только капюшон.
+        if (Class == PlayerClass.Archer)
+        {
+            DrawTorch(g, pivot, flip, time);
+        }
+        else
     {
-            Sprites.Mage.DrawSilhouette(g, drawX, drawY, Palette.Health, 0.22f, flip, 1f);
+ DrawStaff(g, pivot, aim, pull, time);
+        }
+
+    if (flash)
+        {
+            body.DrawSilhouette(g, drawX, drawY, Color.White, HitFlash, flip, 1f);
    }
+        else
+        {
+            body.Draw(g, drawX, drawY, flip, 1f);
+        }
 
-      // Rim light снизу-сзади: ловит свет от пола и подсвечивает фигуру.
-   DrawRimLight(g, drawX, drawY, w, h, flip);
+        // Контур: спрайт рисуется чуть крупнее тёмным силуэтом под собой.
+        // Один пиксель контура отделяет персонажа от любого фона.
+ body.DrawSilhouette(g, drawX, drawY, GameMath.Rgb(6, 5, 12), 0.85f, flip, 1f);
+        body.Draw(g, drawX, drawY, flip, 1f);
 
-    Palette.AddGlow(g, Pos, 16f, GameMath.Mix(ElementTint, Elements.Color(LastElement), 0.4f), 0.28f + Flow * 0.25f);
-       }
+        // Лук поверх силуэта: он держится вытянутой рукой, и за спиной
+        // от стрелка остался бы только капюшон.
+        if (Class == PlayerClass.Archer) DrawBow(g, pivot, aim, pull, ElementTint);
+
+        if (CastFlash > 0.02f)
+        {
+      float reach = Class == PlayerClass.Archer ? 10f : 6f;
+            Palette.AddGlow(g, Pos + GameMath.FromAngle(AimAngle) * reach, 9f * CastFlash, ElementTint, CastFlash * 0.8f);
+        }
+
+      if (Invuln > 0f && !Dashing && (int)(time * 22f) % 2 == 0)
+        {
+      body.DrawSilhouette(g, drawX, drawY, Palette.Health, 0.22f, flip, 1f);
+        }
+
+        // Rim light снизу-сзади: ловит свет от пола и подсвечивает фигуру.
+        DrawRimLight(g, drawX, drawY, w, h, flip);
+
+        Palette.AddGlow(g, Pos, 16f, GameMath.Mix(ElementTint, Elements.Color(LastElement), 0.4f), 0.28f + Flow * 0.25f);
+    }
+
+    /// <summary>
+    /// Оружие в руках. Всё рисуется процедурно: спрайтовая система умеет
+ /// только статику с зеркалированием, а посох с луком должны поворачиваться
+    /// по прицелу и двигаться при выстреле. Та же схема уже работает для
+    /// боссов через группы частей тела.
+    ///
+    /// Метод статический и принимает позицию, поэтому им же рисуется
+    /// портрет в меню выбора класса - там персонаж тоже должен быть с
+/// оружием, иначе маг со стрелком выглядели бы одинаково.
+    /// </summary>
+    public static void DrawHeld(Graphics g, Vector2 pivot, Vector2 aim, float pull,
+        PlayerClass cls, bool flip, float time, Color tint)
+    {
+  if (cls == PlayerClass.Archer)
+    {
+      DrawTorch(g, pivot, flip, time);
+   DrawBow(g, pivot, aim, pull, tint);
+        }
+   else
+        {
+  DrawStaff(g, pivot, aim, pull, time);
+        }
+    }
+
+    /// <summary>Посох мага: палка от руки вверх, на конце светящий кристалл.</summary>
+  private static void DrawStaff(Graphics g, Vector2 pivot, Vector2 aim, float pull, float time)
+    {
+   // Посох держится сбоку от корпуса, слегка наклонён вперёд по прицелу.
+   Vector2 staffDir = GameMath.Normalized(new Vector2(aim.Y, -aim.X) * 0.9f + new Vector2(0f, -1f) * 0.6f);
+        Vector2 grip = new(pivot.X, pivot.Y + 3f);
+        Vector2 top = grip + staffDir * 13f;
+
+        Palette.Fill(g, GameMath.Rgb(112, 74, 40), grip.X - 0.5f, MathF.Min(grip.Y, top.Y), 1f,
+            MathF.Abs(top.Y - grip.Y));
+
+        // Кристалл на наконечнике дышит, и при касте вспыхивает сильнее.
+        float pulse = 0.8f + 0.2f * MathF.Sin(time * 4.2f) + pull * 0.8f;
+        Palette.AddGlow(g, top, 9f * pulse, GameMath.Rgb(140, 240, 255), 0.45f * pulse);
+        Palette.Fill(g, GameMath.Rgb(200, 250, 255), top.X - 1f, top.Y - 1f, 2f, 2f);
+        Palette.Fill(g, GameMath.Rgb(70, 170, 235), top.X - 1.5f, top.Y - 2.5f, 3f, 1.5f);
+    }
+
+    /// <summary>Факел стрелка: палка от руки и живое пламя, которое и есть его свет.</summary>
+    private static void DrawTorch(Graphics g, Vector2 pivot, bool flip, float time)
+    {
+        Vector2 torchDir = GameMath.Normalized(new Vector2(flip ? -0.4f : 0.4f, -1f));
+        Vector2 hand = new(pivot.X, pivot.Y + 3f);
+Vector2 top = hand + torchDir * 8f;
+
+Palette.Fill(g, GameMath.Rgb(112, 74, 40), top.X - 0.5f, top.Y, 1f, 3f);
+
+        // Пламя живёт своей жизнью: три разные частоты, чтобы не пульсировало
+        // синхронно с дыханием персонажа.
+float f1 = 0.5f + 0.5f * MathF.Sin(time * 11f);
+      float f2 = 0.5f + 0.5f * MathF.Sin(time * 17.3f + 1.1f);
+        float f3 = 0.5f + 0.5f * MathF.Sin(time * 6.7f + 2.3f);
+
+        Palette.AddGlow(g, top, 12f + f3 * 4f, GameMath.Rgb(255, 150, 56), 0.34f + f2 * 0.12f);
+        Palette.Fill(g, GameMath.Rgb(255, 240, 190), top.X - 1f, top.Y - 2f - f1 * 0.5f, 2f, 2f);
+        Palette.Fill(g, GameMath.Rgb(255, 150, 56), top.X - 1.5f, top.Y - 3f - f1, 3f, 2f);
+    }
+
+    /// <summary>Лук стрелка: дуга точками плюс тетива, натянутая при выстреле.</summary>
+    private static void DrawBow(Graphics g, Vector2 pivot, Vector2 aim, float pull, Color tint)
+    {
+        float reach = 7f + pull * 2.5f;
+        Vector2 side = new(-aim.Y, aim.X);
+const int Segs = 6;
+
+        for (int i = 0; i <= Segs; i++)
+  {
+float t = i / (float)Segs * 2f - 1f;
+   Vector2 p = pivot + side * (t * reach) + aim * ((1f - t * t) * (2.5f + pull * 2f));
+    Palette.Fill(g, GameMath.Rgb(150, 108, 62), p.X - 0.5f, p.Y - 0.5f, 1f, 1f);
+        }
+
+        Vector2 nock = pivot - aim * (pull * 2.5f);
+        Color cord = GameMath.Rgb(214, 202, 180);
+        Palette.Fill(g, cord, nock.X + side.X * reach - 0.5f, nock.Y + side.Y * reach - 0.5f, 1f, 1f);
+        Palette.Fill(g, cord, nock.X - side.X * reach - 0.5f, nock.Y - side.Y * reach - 0.5f, 1f, 1f);
+
+      // Стрела на тетиве, пока лук не выстрелил.
+        if (pull > 0.05f)
+        {
+   Vector2 tip = nock + aim * (6f + pull * 4f);
+                     Palette.Fill(g, GameMath.Rgb(200, 186, 162), nock.X - 0.5f, nock.Y - 0.5f, 1f, 1f);
+            Palette.Fill(g, GameMath.Rgb(200, 186, 162), tip.X - 0.5f, tip.Y - 0.5f, 1f, 1f);
+            Palette.Fill(g, tint, tip.X - 1f, tip.Y - 0.5f, 2f, 1f);
+    }
+    }
+
+    /// <summary>Положение руки с факелом в мировых координатах: отсюда идёт свет.</summary>
+    public Vector2 TorchPoint()
+    {
+      bool flip = AimAngle > MathF.PI * 0.5f || AimAngle < -MathF.PI * 0.5f;
+  float h = CharacterClasses.Body(Class).Height;
+     return new(Pos.X + (flip ? 3f : -3f), Pos.Y - h * 0.45f);
+    }
 
     /// <summary>
     /// Контровой свет по нижней кромке силуэта. Персонаж стоит в освещённом
@@ -493,7 +636,9 @@ public void Draw(Graphics g, float time)
    Color rim = GameMath.Mix(Elements.Color(LastElement), Color.White, 0.45f);
    float alpha = 0.20f + 0.12f * pulse + Flow * 0.15f;
 
-        // Нижняя кромка плаща.
-        Sprites.MageCape.DrawSilhouette(g, drawX + 1f, drawY + h - 8f, rim, alpha, flip, 1f);
+        // Нижняя кромка плаща. Плащ берётся из класса: у стрелка он короче,
+    // поэтому смещение подгоняется под его высоту.
+   Sprite cape = CharacterClasses.Cape(Class);
+    cape.DrawSilhouette(g, drawX + 1f, drawY + h - cape.Height - 1f, rim, alpha, flip, 1f);
     }
 }
