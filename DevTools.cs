@@ -433,7 +433,66 @@ Vector2 fightStand = game.Player.Pos;
         SaveSpriteSheet(CharacterClasses.Body(PlayerClass.Archer), CharacterClasses.Body(PlayerClass.Mage),
             Path.Combine(directory, "class-sprites.png"), 4);
 
-   Console.WriteLine("=== class shots done ===");
+        // Замер ширины строк главного меню. Ширина считается не на глаз:
+        // раньше строка подсказок была шире экрана и уезжала за левый край,
+        // а никто это не замерял.
+        MeasureTitleLines(renderer);
+
+        Console.WriteLine("=== class shots done ===");
+    }
+
+    /// <summary>
+    /// Печатает ширину каждой строки блока подсказок на титульном экране.
+    /// Рамка панели - 500 px при ширине кадра 640, так что строка должна
+    /// быть заметно уже 500, иначе текст вылезет за панель, а за 570 - уже
+    /// за край экрана.
+ /// </summary>
+    private static void MeasureTitleLines(GameRenderer renderer)
+    {
+        string[] lines =
+        {
+        "WASD - ХОДЬБА      МЫШЬ - ПРИЦЕЛ      ЛКМ - КАСТ",
+  "ПКМ - РЫВОК      КОЛЕСО - СМЕНА РУНЫ      1-6 - РУНЫ СТИХИЙ",
+         "F (ДЕРЖАТЬ) - ЗАЖЕЧЬ КРИСТАЛЛ ОСВЕЩЕНИЯ",
+    "F (ДЕРЖАТЬ) - ЗАЖЕЧЬ КОСТЁР",
+        "Смешивайте стихии подряд - сработает РЕЗОНАНС",
+      "15 глубин. Смерть - это начало.",
+        };
+
+        // Строка рекорда рисуется от левого края и упирается в панель класса.
+        string record = "СТРЕЛОК · ГЛУБИНА 15 · 124800 ОЧКОВ";
+        float recordRoom = Game.ClassPanelX - 80f - 8f;
+
+        using Bitmap probe = new((int)GameRenderer.Width, (int)GameRenderer.Height);
+        using Graphics g = Graphics.FromImage(probe);
+
+        // Замеряем на обоих концах шкалы интерфейса: шрифты создаются
+        // умножением на неё, и строка, которая влезает при 100%, может
+        // вылезти за панель при 130%.
+        foreach (float uiScale in new[] { 1f, 1.3f })
+        {
+            Text.SetUiScale(uiScale);
+            g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.SingleBitPerPixelGridFit;
+            Text.Prepare(g);
+
+            Console.WriteLine($"[title] интерфейс {uiScale * 100f:0}%: 1 символ = {Text.Width(g, "0", Text.Tiny):F1} px");
+        bool allFit = true;
+  foreach (string line in lines)
+            {
+     float w = Text.Width(g, line, Text.Tiny);
+           bool fits = w <= 500f;
+    allFit &= fits;
+ Console.WriteLine($"[title]   {(fits ? "ок    " : "ШИРОКО")} {w,6:F0} px  {line}");
+            }
+
+            float rw = Text.Width(g, record, Text.Tiny);
+            bool recordFits = rw <= recordRoom;
+   allFit &= recordFits;
+     Console.WriteLine($"[title]   {(recordFits ? "ок    " : "ШИРОКО")} {rw,6:F0} px из {recordRoom:F0}  {record}");
+      if (!allFit) throw new InvalidOperationException("строка главного меню не влезает в панель");
+   }
+
+     Text.SetUiScale(1f);
     }
 
     /// <summary>

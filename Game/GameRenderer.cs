@@ -1096,16 +1096,22 @@ private void DrawDuelHud(Graphics g, Game game)
     Text.DrawCentered(g, "AETHER SEQUENCE", Text.Title, Palette.Fade(Palette.Paper, 0.97f), Width * 0.5f, 26f);
         Text.DrawCentered(g, $"ЭФИРНЫЙ ЗАБЕГ {CharacterClasses.Name(cls)}А", Text.Small, Palette.Fade(Palette.Muted, 0.95f), Width * 0.5f, 96f);
 
+        // Панель подсказок. Шаг строк 15 px при шрифте 10 px: раньше шаг был
+        // 16 px на большем интервале, а две последние строки стояли в 6 px
+        // друг от друга и накладывались. 15 px - минимум, который переживает
+    // и масштаб интерфейса 130%, где шрифт вырастает до 13 px.
         const float panelX = 70f;
-        const float panelW = Width - 140f;
-    Palette.Fill(g, Palette.Fade(Palette.Panel, 0.75f), panelX, 128f, panelW, 96f);
-        Palette.Stroke(g, Palette.Fade(Palette.PanelEdge, 0.8f), panelX, 128f, panelW, 96f);
-        Text.DrawCentered(g, "WASD - ХОДЬБА      МЫШЬ - ПРИЦЕЛ      ЛКМ - КАСТ", Text.Tiny, Palette.Paper, Width * 0.5f, 138f);
-        Text.DrawCentered(g, "ПКМ - РЫВОК      КОЛЕСО - СМЕНА РУНЫ      1-6 - РУНЫ СТИХИЙ", Text.Tiny, Palette.Paper, Width * 0.5f, 154f);
-        Text.DrawCentered(g, $"F (держать) - ЗАЖЕЧЬ {CharacterClasses.BeaconName(cls)}", Text.Tiny,
- Palette.Fade(CharacterClasses.BeaconColor(cls), 0.9f), Width * 0.5f, 170f);
- Text.DrawCentered(g, "Смешивайте стихии подряд - сработает РЕЗОНАНС", Text.Tiny, Palette.Fade(Palette.Flow, 0.95f), Width * 0.5f, 176f);
-        Text.DrawCentered(g, "15 глубин. Смерть - это начало.", Text.Tiny, Palette.Muted, Width * 0.5f, 198f);
+        const float panelY = 116f;
+   const float panelW = Width - 140f;
+   const float panelH = 92f;
+        Palette.Fill(g, Palette.Fade(Palette.Panel, 0.75f), panelX, panelY, panelW, panelH);
+        Palette.Stroke(g, Palette.Fade(Palette.PanelEdge, 0.8f), panelX, panelY, panelW, panelH);
+    Text.DrawCentered(g, "WASD - ХОДЬБА      МЫШЬ - ПРИЦЕЛ      ЛКМ - КАСТ", Text.Tiny, Palette.Paper, Width * 0.5f, panelY + 10f);
+        Text.DrawCentered(g, "ПКМ - РЫВОК      КОЛЕСО - СМЕНА РУНЫ      1-6 - РУНЫ СТИХИЙ", Text.Tiny, Palette.Paper, Width * 0.5f, panelY + 25f);
+        Text.DrawCentered(g, $"F (ДЕРЖАТЬ) - ЗАЖЕЧЬ {CharacterClasses.BeaconName(cls)}", Text.Tiny,
+            Palette.Fade(CharacterClasses.BeaconColor(cls), 0.9f), Width * 0.5f, panelY + 40f);
+     Text.DrawCentered(g, "Смешивайте стихии подряд - сработает РЕЗОНАНС", Text.Tiny, Palette.Fade(Palette.Flow, 0.95f), Width * 0.5f, panelY + 55f);
+        Text.DrawCentered(g, "15 глубин. Смерть - это начало.", Text.Tiny, Palette.Muted, Width * 0.5f, panelY + 70f);
 
         if (game.State == GameState.Duel)
         {
@@ -1227,32 +1233,33 @@ Palette.Fill(g, c, cx + 4f, cy - 3f, 2f, 7f);
     }
 
     /// <summary>
-    /// Рекорды под меню. Показываются по каждому классу отдельно: одна
-    /// сводная строка смешала бы прогресс мага и стрелка в неразличимое
-    /// число.
+    /// Рекорды по классам. Раньше строки стояли по центру кадра в шаге 9 px
+    /// при шрифте 10 px и налезали друг на друга и на подложку первого пункта
+ /// меню. Теперь они выровнены по левому краю панели подсказок и сдвинуты
+ /// влево от панели выбора класса: по центру длинная строка заезжала под неё.
     /// </summary>
     private static void DrawBestRecord(Graphics g, Game game, PlayerClass selected)
     {
-        Settings s = game.Settings;
+Settings s = game.Settings;
         bool any = s.BestDepthAnywhere > 0 || s.BestScoreAnywhere > 0;
         if (!any) return;
 
-        float y = 231f;
+   float y = 214f;
         for (int i = 0; i < CharacterClasses.Count; i++)
         {
             PlayerClass c = (PlayerClass)i;
-     int depth = s.BestDepthOf(c);
-        int score = s.BestScoreOf(c);
-if (depth <= 0 && score <= 0) continue;
+            int depth = s.BestDepthOf(c);
+    int score = s.BestScoreOf(c);
+            if (depth <= 0 && score <= 0) continue;
 
-            string line = $"ГЛУБИНА {depth}";
-if (score > 0) line += $" · {score} ОЧКОВ";
+        string line = $"ГЛУБИНА {depth}";
+            if (score > 0) line += $" · {score} ОЧКОВ";
 
-            bool isSel = c == selected;
+      bool isSel = c == selected;
             Color col = Palette.Fade(isSel ? Palette.Gold : Palette.Muted, isSel ? 0.9f : 0.55f);
-       Text.DrawCentered(g, $"{CharacterClasses.Name(c)} · {line}", Text.Tiny, col, Width * 0.5f, y);
- y += 9f;
-        }
+   Text.Draw(g, $"{CharacterClasses.Name(c)} · {line}", Text.Tiny, col, 80f, y);
+    y += 14f;
+ }
     }
 
     private void DrawDuelMenu(Graphics g, Game game)
