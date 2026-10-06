@@ -237,7 +237,7 @@ internal sealed class DuelSession : IDisposable
         Input input = _game.Input;
         uint down = 0u;
         uint pressed = 0u;
-        for (int i = 0; i < 19; i++)
+        for (int i = 0; i < InputActions.Count; i++)
         {
             InputAction action = (InputAction)i;
             if (input.Down(action)) down |= 1u << i;

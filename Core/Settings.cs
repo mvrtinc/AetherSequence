@@ -399,6 +399,11 @@ internal sealed class Settings
         Set(InputAction.Confirm, Keys.Enter, new InputBind(MouseButton.Left));
         Set(InputAction.NextRune, Keys.Q);
         Set(InputAction.PrevRune, Keys.C);
+
+        // Активация кристалла. Раньше зарядка шла по кнопке атаки (ЛКМ), и это
+        // мешало: чтобы зажечь кристалл, приходилось жать то же самое, что и
+        // для выстрела. Отдельная клавиша F снимает это неудобство.
+        Set(InputAction.ChargeCrystal, Keys.F);
     }
 
     private void Set(InputAction action, params InputBind[] inputs)

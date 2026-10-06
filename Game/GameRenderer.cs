@@ -186,8 +186,8 @@ GraphicsState state = g.Save();
         game.Level.DrawExit(g, game.Time, game.Level.ExitOpen);
       game.Effects.Draw(g, game.Time);
 
-        // Кристаллы стоят на полу и тоже прячутся в темноте: неактивный
-        // кристалл должен быть виден только там, куда падает свет посоха.
+           // Кристаллы стоят на полу и тоже прячутся в темноте: неактивный
+     // кристалл видно только там, куда дотягивается ореол героя.
         for (int i = 0; i < game.Crystals.Count; i++)
         {
   Crystal c = game.Crystals[i];
@@ -276,29 +276,17 @@ CollectLights(game, _mask, cam);
       // Туман войны: отмечаем то, куда падает свет. Планировка исследованного
         // остаётся на миникарте навсегда, а содержимое - нет.
         if (game.Player.Alive)
-     {
-   game.Level.MarkExplored(game.Player.Pos, 58f);
-            MarkConeExplored(game);
-   }
-    }
-
-    /// <summary>
-    /// Отмечает тайлы вдоль конуса посоха: игрок видит, куда светит,
-    /// поэтому исследованной считается и освещённая часть комнаты.
-    /// </summary>
-    private static void MarkConeExplored(Game game)
-    {
-   Vector2 origin = game.Player.Pos;
-        Vector2 dir = GameMath.FromAngle(game.Player.AimAngle);
-        const float Len = 110f;
- const int Steps = 22;
-
-   for (int i = 3; i <= Steps; i++)
         {
-      float t = i / (float)Steps;
-      Vector2 p = origin + dir * (Len * t);
-   game.Level.MarkExplored(p, 22f);
+   game.Level.MarkExplored(game.Player.Pos, game.ChargeActive ? 44f : 62f);
+
+   // Зажжённые кристаллы тоже освещают комнату, поэтому исследованной
+            // считается всё, что попало в их свет.
+        for (int i = 0; i < game.Crystals.Count; i++)
+       {
+     Crystal c = game.Crystals[i];
+    if (c.Activated) game.Level.MarkExplored(c.Pos, Crystal.LightRadius);
         }
+      }
     }
 
     /// <summary>Накладывает темноту на уже нарисованный мир.</summary>
@@ -327,19 +315,23 @@ CollectLights(game, _mask, cam);
     {
         Player p = game.Player;
 
-        if (p.Alive)
-      {
-       Vector2 aim = GameMath.FromAngle(p.AimAngle);
+if (p.Alive)
+        {
+   // От героя идёт только ореол вокруг персонажа - фонарика нет.
+       // Раньше свет шёл конусом по направлению прицела, и это читалось
+       // как отдельный источник, а не как присутствие самого мага.
+            Color aura = GameMath.Mix(Palette.Health, Elements.Color(p.LastElement), 0.35f);
 
-// Посох: узкий конус по направлению прицела. Он и есть главный
-   // источник - во всём остальном игрок почти ничего не видит.
-float cone = game.ChargeActive ? 0.34f : 0.52f;
-            float coneLen = game.ChargeActive ? 74f : 108f;
-  mask.Add(LightSource.Cone(p.Pos, aim, coneLen, cone,
-     GameMath.Mix(Elements.Color(p.LastElement), Palette.ExitOpen, 0.45f), 1.35f, 0.55f));
+        // Основной ореол. Во время зарядки кристалла он сжимается:
+ // игрок в этот момент не должен хорошо видеть.
+// Радиус подобран так, чтобы освещённая площадь сравнялась с бывшим
+      // конусом: ореол должен уходить дальше по бокам, раз конуса больше нет.
+  float radius = game.ChargeActive ? 34f : 58f;
+            float intensity = game.ChargeActive ? 0.72f : 1.1f;
+            mask.Add(LightSource.Circle(p.Pos, radius, aura, intensity, 0.85f));
 
-     // Небольшой ореол вокруг игрока, чтобы не было слепой точки.
-            mask.Add(LightSource.Circle(p.Pos, 32f, Palette.Health, 0.8f, 0.8f));
+     // Второй, более плотный слой у самых ног: отделяет фигуру от пола.
+     mask.Add(LightSource.Circle(p.Pos, 24f, aura, intensity * 0.85f, 0.7f));
         }
 
     // Снаряды свет и огонь дают малый ореол - иначе в темноте не видно,
@@ -362,14 +354,27 @@ float cone = game.ChargeActive ? 0.34f : 0.52f;
      mask.Add(LightSource.Circle(exit + cam, 52f, game.Level.Colors.ExitOpen, 0.75f, 0.7f));
         }
 
-        // Активированные кристаллы светят постоянно и освещают комнату.
-   for (int i = 0; i < game.Crystals.Count; i++)
-   {
-        Crystal c = game.Crystals[i];
-        if (!c.Activated) continue;
-        Vector2 cp = c.Pos - cam;
-        mask.Add(LightSource.Circle(cp + cam, Crystal.LightRadius, Palette.ExitOpen, 0.95f, 0.7f));
-    }
+// Активированные кристаллы светят постоянно и освещают комнату.
+     // Цвет берётся из темы, чтобы кристалл был частью пещеры, а не
+        // белым пятном поверх неё, и подмешивается с кристаллом для
+   // насыщенности: серый неон в тёмной комнате выглядит вялым.
+        for (int i = 0; i < game.Crystals.Count; i++)
+        {
+Crystal c = game.Crystals[i];
+     if (!c.Activated) continue;
+
+            Vector2 cp = c.Pos - cam;
+            Color hot = GameMath.Mix(game.Level.Colors.Neon, Palette.ExitOpen, 0.45f);
+
+            // Ядро: маленькое, но плотное - это и есть сам кристалл.
+            mask.Add(LightSource.Circle(cp + cam, 34f, hot, 1.5f, 0.55f));
+
+  // Основное пятно заполняет комнату.
+            mask.Add(LightSource.Circle(cp + cam, Crystal.LightRadius, hot, 1.25f, 0.8f));
+
+    // Мягкий подсвет по краю, чтобы комната не кончалась кругом.
+   mask.Add(LightSource.Circle(cp + cam, Crystal.LightRadius * 1.5f, hot, 0.5f, 0.95f));
+        }
     }
 
 /// <summary>
@@ -1058,6 +1063,7 @@ private void DrawDuelHud(Graphics g, Game game)
         Palette.Stroke(g, Palette.Fade(Palette.PanelEdge, 0.8f), panelX, 128f, panelW, 96f);
         Text.DrawCentered(g, "WASD - ХОДЬБА      МЫШЬ - ПРИЦЕЛ      ЛКМ - КАСТ", Text.Tiny, Palette.Paper, Width * 0.5f, 138f);
         Text.DrawCentered(g, "ПКМ - РЫВОК      КОЛЕСО - СМЕНА РУНЫ      1-6 - РУНЫ СТИХИЙ", Text.Tiny, Palette.Paper, Width * 0.5f, 154f);
+    Text.DrawCentered(g, "F (держать) - ЗАЖЕЧЬ КРИСТАЛЛ ОСВЕЩЕНИЯ", Text.Tiny, Palette.Fade(Palette.ExitOpen, 0.9f), Width * 0.5f, 170f);
         Text.DrawCentered(g, "Смешивайте стихии подряд - сработает РЕЗОНАНС", Text.Tiny, Palette.Fade(Palette.Flow, 0.95f), Width * 0.5f, 176f);
         Text.DrawCentered(g, "15 глубин. Смерть - это начало.", Text.Tiny, Palette.Muted, Width * 0.5f, 198f);
 

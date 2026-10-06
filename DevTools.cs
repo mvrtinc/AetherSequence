@@ -1,4 +1,4 @@
-﻿using System.Drawing;
+using System.Drawing;
 using System.Drawing.Imaging;
 using System.Numerics;
 using System.Windows.Forms;
@@ -94,6 +94,26 @@ internal static class DevTools
         game.StartRun(20250801u);
         Bot(game, 60 * 18, rng, true);
         Save(renderer, game, Path.Combine(directory, "2-combat.png"));
+
+        // Зажжённый кристалл: его свет должен явно выигрывать у ореола героя.
+        game.State = GameState.Playing;
+        if (game.Crystals.Count > 0)
+        {
+            Crystal c = game.Crystals[0];
+            game.Player.Pos = c.Pos + GameMath.FromAngle(MathF.PI) * 30f;
+            game.Player.AimAngle = 0f;
+            for (int i = 0; i < 200 && !c.Activated; i++)
+            {
+                game.Input.KeyDown(Keys.F);
+                game.Update(1.0 / 60.0);
+            }
+            game.Input.KeyUp(Keys.F);
+            game.Player.Pos = c.Pos + GameMath.FromAngle(MathF.PI) * 74f;
+            game.Player.AimAngle = 0f;
+            for (int i = 0; i < 10; i++) game.Update(1.0 / 60.0);
+            Save(renderer, game, Path.Combine(directory, "2b-crystal.png"));
+        }
+        game.State = GameState.Playing;
 
         game.State = GameState.LevelUp;
         game.Choices.Clear();
@@ -1294,11 +1314,11 @@ Console.WriteLine("[dark] темнота, кристаллы и свет");
      // Держим кнопку каста и крутим кадры - кристалл должен зарядиться.
       for (int i = 0; i < 200 && !crystal.Activated; i++)
         {
-    game.Input.MouseDown(MouseButton.Left);
+    game.Input.KeyDown(Keys.F);
          game.Update(1f / 60f);
           }
      charged = crystal.Activated;
-            game.Input.MouseUp(MouseButton.Left);
+            game.Input.KeyUp(Keys.F);
 
       // Сброс: новый кристалл, урон посреди зарядки должен её оборвать.
   Crystal? second = game.Crystals.Count > 1 ? game.Crystals[1] : null;
@@ -1307,21 +1327,46 @@ Console.WriteLine("[dark] темнота, кристаллы и свет");
         game.Player.Pos = second.Pos + GameMath.FromAngle(MathF.PI) * 26f;
             game.Player.AimAngle = 0f;
 
-       for (int i = 0; i < 60 && second.Charge < 0.4f; i++)
-      {
-      game.Input.MouseDown(MouseButton.Left);
-    game.Update(1f / 60f);
+         for (int i = 0; i < 60 && second.Charge < 0.4f; i++)
+            {
+    game.Input.KeyDown(Keys.F);
+      game.Update(1f / 60f);
     }
 
-       float before = second.Charge;
+         // Убираем врагов: иначе они бьют игрока во время проверки и сбрасывают
+            // зарядку сами, и результат зависит от того, где кто оказался.
+  game.Enemies.Clear();
+
+    // Урон обязан обнулить зарядку прямо в момент попадания.
+            bool hadCharge = second.Charge >= 0.4f;
     game.Player.TakeDamage(game, 5f, second.Pos);
-                for (int i = 0; i < 6; i++)
-       {
-   game.Input.MouseDown(MouseButton.Left);
-     game.Update(1f / 60f);
-           }
-       interrupted = second.Charge < before || !second.Activated;
-        game.Input.MouseUp(MouseButton.Left);
+    bool resetOnHit = second.Charge <= 0.001f;
+
+   Vector2 stand = second.Pos + GameMath.FromAngle(MathF.PI) * 26f;
+
+    // Пока держим F после удара, зарядка не должна идти: есть блокировка.
+  for (int i = 0; i < 10; i++)
+     {
+  game.Player.Pos = stand;
+        game.Player.AimAngle = 0f;
+      game.Input.KeyDown(Keys.F);
+       game.Update(1f / 60f);
+     }
+      bool lockedOut = second.Charge <= 0.001f && !second.Activated;
+
+   // А после блокировки зарядка обязана снова пойти - кристалл не сломан.
+        for (int i = 0; i < 150 && !second.Activated; i++)
+        {
+            game.Player.Pos = stand;
+        game.Player.AimAngle = 0f;
+        game.Input.KeyDown(Keys.F);
+       game.Update(1f / 60f);
+        }
+            interrupted = hadCharge && resetOnHit && lockedOut && second.Activated;
+game.Input.KeyUp(Keys.F);
+        Console.WriteLine($"[dark] прерывание: было={hadCharge} сброс={resetOnHit} блокировка={lockedOut} " +
+  $"снова={second.Activated} заряд={second.Charge:F2} hp={game.Player.Hp:F0} жив={game.Player.Alive} " +
+    $"состояние={game.State}");
     }
       }
 

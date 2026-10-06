@@ -5,11 +5,16 @@
 
 ![Глубина 1](docs/screenshot-combat.png)
 
+![Зажжённый кристалл освещает комнату](docs/screenshot-crystal.png)
+
 ## Скачать и играть
 
 Готовая сборка — в разделе **[Releases](../../releases/latest)** или напрямую:
 
-**[⬇ Скачать Aether Sequence v1.1 (zip, 46 МБ)](../../releases/download/v1.1/AetherSequence-v1.1.zip)**
+**[⬇ Скачать Aether Sequence v1.3 (zip, 46 МБ)](../../releases/download/v1.3/AetherSequence-v1.3.zip)**
+
+Если ссылка на релиз ещё не открывается, архив лежит прямо в репозитории:
+**[⬇ AetherSequence-v1.3.zip](raw/main/release/AetherSequence-v1.3.zip)**
 
 Распакуйте архив и запустите `AetherSequence.exe`. Windows 10/11, ничего
 доустанавливать не нужно — всё внутри одного файла.
@@ -69,6 +74,7 @@ AetherSequence.exe --netdiag
 | Ходьба | `WASD` / стрелки |
 | Прицел | мышь |
 | Каст | `ЛКМ` (зажать) |
+| Зажечь кристалл освещения | `F` (зажать, 1.5 с) |
 | Рывок | `ПКМ` |
 | Смена руны | `1`–`6`, колесо |
 | Сброс комбо | `X` |

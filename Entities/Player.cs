@@ -377,8 +377,9 @@ internal sealed class Player
         float dmg = amount * DamageTakenMul;
         Hp -= dmg;
         HitFlash = 1f;
+        game?.BreakCharge();
         if (game is not null)
-        {
+     {
             game.Camera.Add(selfInflicted ? 1.2f : 3.4f);
             if (!selfInflicted) AudioSystem.Play(Sfx.PlayerHurt, 0.6f, 1f - Hp / MaxHp * 0.25f);
             game.Flash(Palette.Danger, selfInflicted ? 0.2f : 0.35f);

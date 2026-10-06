@@ -32,7 +32,7 @@ internal sealed class Crystal
     public const float LightRadius = 96f;
 
     /// <summary>Сколько секунд нужно удерживать зарядку.</summary>
-    public const float ChargeSeconds = 2f;
+    public const float ChargeSeconds = 1.5f;
 
     /// <summary>С какого расстояния посох вообще достаёт до кристалла.</summary>
     public const float Reach = 46f;

@@ -257,6 +257,9 @@ public readonly List<Pickup> Pickups = new();
     /// <summary>Кристалл, который сейчас заряжается.</summary>
     public Crystal? Charging;
 
+    /// <summary>Короткая блокировка зарядки после удара.</summary>
+    private float ChargeBreakLock;
+
     public readonly EffectSystem Effects = new();
 
     public readonly Camera Camera = new();
@@ -562,15 +565,18 @@ Level.ExitOpen = false;
     }
 
     /// <summary>
-    /// Зарядка кристалла. Игрок стоит на месте, направляет посох и держит
-    /// кнопку каста две секунды. Любой урон сбрасывает зарядку - это и есть
-    /// риск, который нужно пережить в темноте.
+    /// Зарядка кристалла. Игрок стоит на месте, направляет посох и держит F
+ /// полторы секунды. Любой урон сбрасывает зарядку - это и есть риск,
+    /// который нужно пережить в темноте.
     /// </summary>
     private void UpdateCrystals(float dt)
     {
-        bool wasCharging = ChargeActive;
+        // Цель прошлого кадра нужна после обнуления полей: по ней гасим
+        // зарядку, если игрок отпустил F, увёл посох или получил урон.
+        Crystal? previous = Charging;
         ChargeActive = false;
-     Charging = null;
+        Charging = null;
+ChargeBreakLock = MathF.Max(0f, ChargeBreakLock - dt);
 
      for (int i = 0; i < Crystals.Count; i++)
         {
@@ -580,8 +586,15 @@ Level.ExitOpen = false;
 
         if (Crystals.Count == 0) return;
 
-        Player p = Player;
-        if (!p.Alive || State != GameState.Playing || DuelMode) return;
+          Player p = Player;
+if (!p.Alive || State != GameState.Playing || DuelMode) return;
+
+      // После удара зарядку нельзя тут же продолжить, иначе урон ничего не стоит.
+  if (ChargeBreakLock > 0f)
+        {
+StopCharge(previous);
+       return;
+    }
 
         // Кандидат - ближайший незаряженный кристалл в пределах досягаемости.
   Crystal? target = null;
@@ -598,25 +611,23 @@ Level.ExitOpen = false;
         }
         }
 
-   if (target is null || !Input.Down(InputAction.Fire))
-        {
-   // Зарядку прервали: гасим и убираем свечение.
-         if (wasCharging && Charging is not null)
-       {
-      Charging.Reset();
-        Effects.Burst(Charging.Pos, Palette.Muted, 6, 60f, 2f, 0.25f);
-            }
-         return;
-        }
+   // Зарядка идёт на F, а не на кнопке атаки: держать ЛКМ, чтобы зажечь
+        // кристалл, было неудобно - это же самое, что и выстрел.
+    if (target is null || !Input.Down(InputAction.ChargeCrystal))
+   {
+      // Зарядку прервали: гасим и убираем свечение.
+    StopCharge(previous);
+      return;
+    }
 
         // Посох должен смотреть в кристалл, иначе зарядка не идёт.
   Vector2 toCrystal = GameMath.Normalized(target.Pos - p.Pos);
     float dot = Vector2.Dot(toCrystal, GameMath.FromAngle(p.AimAngle));
         float aim = MathF.Acos(GameMath.Clamp(dot, -1f, 1f));
-   if (aim > 0.5f)
-      {
-   if (wasCharging && Charging is not null) Charging.Reset();
-            return;
+     if (aim > 0.5f)
+        {
+      StopCharge(previous);
+     return;
    }
 
   ChargeActive = true;
@@ -633,8 +644,29 @@ Level.ExitOpen = false;
   Effects.Burst(around, Palette.ExitOpen, 1, 40f + k * 60f, 1.5f + k, 0.3f, true);
     }
 
-    if (target.Charge >= Crystal.ChargeSeconds) ActivateCrystal(target);
-  }
+     if (target.Charge >= Crystal.ChargeSeconds) ActivateCrystal(target);
+    }
+
+  /// <summary>
+    /// Гасит начатую зарядку. Вызывается из урона игроку: держать F под
+    /// ударом бессмысленно, кристалл должен начать сначала.
+  /// </summary>
+    public void BreakCharge()
+    {
+   if (Charging is null) return;
+        StopCharge(Charging);
+        ChargeActive = false;
+        Charging = null;
+        ChargeBreakLock = 0.35f;
+    }
+
+    private void StopCharge(Crystal? c)
+    {
+     if (c is null || c.Activated || c.Charge <= 0f) return;
+  c.Reset();
+      Effects.Burst(c.Pos, Palette.Muted, 6, 60f, 2f, 0.25f);
+    }
+
 
     /// <summary>
     /// Активация: вспышка, постоянный свет комнаты и вскрытие на карте.

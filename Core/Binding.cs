@@ -34,6 +34,19 @@ internal enum InputAction
     Confirm,
     NextRune,
     PrevRune,
+
+    /// <summary>Активация кристалла освещения. Отдельная клавиша, чтобы не мешать касту.</summary>
+    ChargeCrystal,
+}
+
+/// <summary>
+/// Число действий ввода. Оно же - размер битовой маски в сетевом пакете,
+/// поэтому зашитое в коде число всегда берётся отсюда: при добавлении
+/// действия старый литерал молча перестал бы отправлять его по сети.
+/// </summary>
+internal static class InputActions
+{
+    public const int Count = (int)InputAction.ChargeCrystal + 1;
 }
 
 internal struct InputBind : IEquatable<InputBind>
